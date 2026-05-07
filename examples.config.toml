@@ -1,0 +1,11 @@
+[keys]
+global = "ctrl-g"
+pwd = "ctrl-p"
+git_root = "ctrl-r"
+context = "ctrl-o"
+context_expand = "alt-]"
+context_shrink = "alt-["
+toggle_pwd_mode = "ctrl-s"
+
+[pwd]
+mode = "subdirs"
