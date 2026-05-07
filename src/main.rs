@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use clap::Parser;
+use cmdscope::{AppConfig, AppModel, HistoryStore, Msg, tui};
 use crossterm::{
     event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
     execute,
@@ -7,7 +8,6 @@ use crossterm::{
 };
 use ratatui::{Terminal, backend::CrosstermBackend};
 use std::{env, io, path::PathBuf, process::Command, time::Duration};
-use cmdscope::{AppConfig, AppModel, HistoryStore, Msg, tui};
 
 #[derive(Debug, Parser)]
 #[command(name = "cmdscope", about = "Interactive Atuin history picker")]
@@ -28,10 +28,7 @@ fn main() -> Result<()> {
     let config = AppConfig::load_optional(config_path)?;
     let store = HistoryStore::load_sqlite(&args.db)?;
     if args.print_first {
-        if let Some(entry) = store
-            .search("", cmdscope::SearchMode::All, None, 1)
-            .first()
-        {
+        if let Some(entry) = store.search("", cmdscope::SearchMode::All, None, 1).first() {
             println!("{}", entry.command);
         }
         return Ok(());

@@ -18,11 +18,7 @@ pub fn render(model: &AppModel, config: &AppConfig, area: Rect, buf: &mut Buffer
         .split(area);
 
     Paragraph::new(header_lines(model))
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title("cmdscope"),
-        )
+        .block(Block::default().borders(Borders::ALL).title("cmdscope"))
         .render(chunks[0], buf);
 
     let items = model.visible().iter().map(history_item).collect::<Vec<_>>();
