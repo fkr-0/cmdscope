@@ -112,3 +112,18 @@ Context review:
 - The active filter string is ignored while reviewing context.
 - Expand or shrink time-neighbor radius with `context_expand` / `context_shrink`.
 - Typing, switching scope, or toggling pwd mode leaves context mode and resumes fuzzy filtering.
+
+## Release builds
+
+GitHub Actions runs CI on pushes and pull requests. Pushing a tag matching `v*` creates a GitHub Release and uploads packaged binaries:
+
+    git tag v0.1.0
+    git push origin v0.1.0
+
+Release assets currently include:
+
+- `thist-x86_64-unknown-linux-gnu.tar.gz`
+- `thist-macos.tar.gz`
+- `thist-x86_64-pc-windows-msvc.zip`
+
+Each archive contains the `thist` executable, `README.md`, and `examples.config.toml`.
