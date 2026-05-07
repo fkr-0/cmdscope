@@ -1,6 +1,6 @@
 use rusqlite::Connection;
 use tempfile::NamedTempFile;
-use terminal_history::{HistoryStore, SearchMode};
+use cmdscope::{HistoryStore, SearchMode};
 
 #[test]
 fn loads_atuin_history_schema_and_ignores_deleted_rows() {

@@ -7,15 +7,15 @@ use crossterm::{
 };
 use ratatui::{Terminal, backend::CrosstermBackend};
 use std::{env, io, path::PathBuf, process::Command, time::Duration};
-use terminal_history::{AppConfig, AppModel, HistoryStore, Msg, tui};
+use cmdscope::{AppConfig, AppModel, HistoryStore, Msg, tui};
 
 #[derive(Debug, Parser)]
-#[command(name = "thist", about = "Interactive Atuin history picker")]
+#[command(name = "cmdscope", about = "Interactive Atuin history picker")]
 struct Args {
-    #[arg(long, env = "TERMINAL_HISTORY_DB", default_value = "history.db")]
+    #[arg(long, env = "CMDSCOPE_DB", default_value = "history.db")]
     db: PathBuf,
 
-    #[arg(long, env = "TERMINAL_HISTORY_CONFIG")]
+    #[arg(long, env = "CMDSCOPE_CONFIG")]
     config: Option<PathBuf>,
 
     #[arg(long)]
@@ -29,7 +29,7 @@ fn main() -> Result<()> {
     let store = HistoryStore::load_sqlite(&args.db)?;
     if args.print_first {
         if let Some(entry) = store
-            .search("", terminal_history::SearchMode::All, None, 1)
+            .search("", cmdscope::SearchMode::All, None, 1)
             .first()
         {
             println!("{}", entry.command);
@@ -53,7 +53,7 @@ fn default_config_path() -> PathBuf {
         .map(PathBuf::from)
         .or_else(|| env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))
         .unwrap_or_else(|| PathBuf::from("."))
-        .join("terminal-history/config.toml")
+        .join("cmdscope/config.toml")
 }
 
 fn detect_git_root() -> Option<String> {

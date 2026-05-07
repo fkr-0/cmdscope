@@ -62,17 +62,17 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            asset_name: thist-x86_64-unknown-linux-gnu.tar.gz
+            asset_name: cmdscope-x86_64-unknown-linux-gnu.tar.gz
             archive: tar
-            binary: thist
+            binary: cmdscope
           - os: macos-latest
-            asset_name: thist-macos.tar.gz
+            asset_name: cmdscope-macos.tar.gz
             archive: tar
-            binary: thist
+            binary: cmdscope
           - os: windows-latest
-            asset_name: thist-x86_64-pc-windows-msvc.zip
+            asset_name: cmdscope-x86_64-pc-windows-msvc.zip
             archive: zip
-            binary: thist.exe
+            binary: cmdscope.exe
     runs-on: ${{ matrix.os }}
     steps:
       - name: Check out repository

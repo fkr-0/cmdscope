@@ -21,7 +21,7 @@ pub fn render(model: &AppModel, config: &AppConfig, area: Rect, buf: &mut Buffer
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title("terminal-history"),
+                .title("cmdscope"),
         )
         .render(chunks[0], buf);
 

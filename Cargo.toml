@@ -1,16 +1,16 @@
 [package]
-name = "terminal-history"
+name = "cmdscope"
 version = "0.1.0"
 edition = "2024"
 description = "Interactive Rust TUI for filtering Atuin shell history"
 license = "MIT"
 
 [lib]
-name = "terminal_history"
+name = "cmdscope"
 path = "src/lib.rs"
 
 [[bin]]
-name = "thist"
+name = "cmdscope"
 path = "src/main.rs"
 
 [dependencies]

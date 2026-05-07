@@ -196,7 +196,7 @@ pub struct AppConfig {
 
 impl AppConfig {
     pub fn from_toml(input: &str) -> Result<Self> {
-        toml::from_str(input).context("failed to parse terminal-history config")
+        toml::from_str(input).context("failed to parse cmdscope config")
     }
 
     pub fn load_optional(path: impl AsRef<Path>) -> Result<Self> {

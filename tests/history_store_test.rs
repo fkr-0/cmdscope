@@ -1,4 +1,4 @@
-use terminal_history::{HistoryEntry, HistoryStore, SearchMode};
+use cmdscope::{HistoryEntry, HistoryStore, SearchMode};
 
 fn seed_store() -> HistoryStore {
     let entries = vec![

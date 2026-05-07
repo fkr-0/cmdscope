@@ -1,4 +1,4 @@
-use terminal_history::{
+use cmdscope::{
     AppConfig, AppModel, HistoryEntry, HistoryStore, Msg, PwdMatchMode, SearchMode, SearchScope,
 };
 

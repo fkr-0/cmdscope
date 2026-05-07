@@ -341,6 +341,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "cmdscope"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "assert_cmd",
+ "clap",
+ "crossterm",
+ "predicates",
+ "ratatui",
+ "rusqlite",
+ "serde",
+ "skim",
+ "tempfile",
+ "toml",
+]
+
+[[package]]
 name = "color-eyre"
 version = "0.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2182,23 +2199,6 @@ dependencies = [
  "once_cell",
  "rustix",
  "windows-sys",
-]
-
-[[package]]
-name = "terminal-history"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "assert_cmd",
- "clap",
- "crossterm",
- "predicates",
- "ratatui",
- "rusqlite",
- "serde",
- "skim",
- "tempfile",
- "toml",
 ]
 
 [[package]]

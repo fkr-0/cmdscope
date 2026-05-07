@@ -1,6 +1,6 @@
-# terminal-history
+# cmdscope
 
-`terminal-history` is a Rust terminal UI for interactively searching an Atuin-style shell history SQLite database.
+`cmdscope` is a Rust terminal UI for interactively searching an Atuin-style shell history SQLite database.
 It is designed for shell `Ctrl-R` usage: fuzzy-filter commands, optionally restrict results to the current directory, inspect time-neighbor context around a result, then print the selected command for shell insertion.
 
 ## Features
@@ -57,18 +57,18 @@ Smoke-test DB loading without entering the TUI:
 
 Example Bash/Zsh binding shape:
 
-    thist-widget() {
+    cmdscope-widget() {
       local selected
-      selected="$(TERMINAL_HISTORY_DB="$HOME/.local/share/atuin/history.db" thist)" || return
+      selected="$(CMDSCOPE_DB="$HOME/.local/share/atuin/history.db" cmdscope)" || return
       [[ -n "$selected" ]] || return
       BUFFER="$selected"
       CURSOR=${#BUFFER}
       zle redisplay
     }
-    zle -N thist-widget
-    bindkey '^R' thist-widget
+    zle -N cmdscope-widget
+    bindkey '^R' cmdscope-widget
 
-For Bash/readline, wire `thist` as a command substitution in a custom `bind -x` function.
+For Bash/readline, wire `cmdscope` as a command substitution in a custom `bind -x` function.
 
 ## Development
 
@@ -80,7 +80,7 @@ The tests use TDD-friendly pure model/store behavior so the interactive terminal
 
 ## Config
 
-`thist` reads `--config`, `TERMINAL_HISTORY_CONFIG`, or `XDG_CONFIG_HOME/terminal-history/config.toml`.
+`cmdscope` reads `--config`, `CMDSCOPE_CONFIG`, or `XDG_CONFIG_HOME/cmdscope/config.toml`.
 All shortcuts are configurable through TOML:
 
     [keys]
@@ -122,8 +122,8 @@ GitHub Actions runs CI on pushes and pull requests. Pushing a tag matching `v*` 
 
 Release assets currently include:
 
-- `thist-x86_64-unknown-linux-gnu.tar.gz`
-- `thist-macos.tar.gz`
-- `thist-x86_64-pc-windows-msvc.zip`
+- `cmdscope-x86_64-unknown-linux-gnu.tar.gz`
+- `cmdscope-macos.tar.gz`
+- `cmdscope-x86_64-pc-windows-msvc.zip`
 
-Each archive contains the `thist` executable, `README.md`, and `examples.config.toml`.
+Each archive contains the `cmdscope` executable, `README.md`, and `examples.config.toml`.

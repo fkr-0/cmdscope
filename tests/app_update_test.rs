@@ -1,4 +1,4 @@
-use terminal_history::{AppModel, HistoryEntry, HistoryStore, Msg, SearchMode};
+use cmdscope::{AppModel, HistoryEntry, HistoryStore, Msg, SearchMode};
 
 fn model() -> AppModel {
     AppModel::new(
