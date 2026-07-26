@@ -12,6 +12,20 @@ fn model() -> AppModel {
 }
 
 #[test]
+fn typing_leaves_context_and_resumes_incremental_search() {
+    let mut model = model();
+    model.update(Msg::Input('l'));
+    model.update(Msg::ToggleContext);
+
+    assert!(model.in_context_mode());
+    model.update(Msg::Input('s'));
+
+    assert!(!model.in_context_mode());
+    assert_eq!(model.query(), "ls");
+    assert_eq!(model.visible_commands(), vec!["ls"]);
+}
+
+#[test]
 fn typing_updates_query_and_results() {
     let mut model = model();
 

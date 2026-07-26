@@ -5,12 +5,15 @@ It is designed for shell `Ctrl-R` usage: fuzzy-filter commands, optionally restr
 
 ## Features
 
-- Elm-style architecture split into pure model/update logic and terminal rendering.
-- Fuzzy matching through `skim`'s matcher instead of a custom fuzzy implementation.
+- Layered architecture with independent history, scope, search, model, keymap, and rendering modules.
+- Fzf-compatible scoring through `skim`, combined with incremental candidate narrowing and prefix caching.
+- Bounded top-K ranking instead of sorting every fuzzy match after each keypress.
+- Allocation-free key dispatch from a startup-validated TOML keymap.
 - `ratatui` + `crossterm` TUI with keyboard-driven interaction.
 - Atuin `history` table support, including `cwd` and `deleted_at` filtering.
 - Same-directory mode for context-sensitive command recall.
 - Context mode that ignores the active filter string and shows commands around the selected result in time order.
+- Visible selected-row marker plus toggleable history metadata columns such as date and pwd.
 
 ## Database schema
 
@@ -32,14 +35,49 @@ The app expects an Atuin-like table:
 
 The example project data lives at `./history.db`, but local `.db` files are ignored by git.
 
-## Build and run
+## Quick start
+
+Build the binary:
 
     cargo build
+
+Run against a local history database:
+
     cargo run -- --db ./history.db
 
 Smoke-test DB loading without entering the TUI:
 
     cargo run -- --db ./history.db --print-first
+
+Use an Atuin database directly:
+
+    CMDSCOPE_DB="$HOME/.local/share/atuin/history.db" cmdscope
+
+Use a custom config file:
+
+    cmdscope --config ./examples.config.toml --db ./history.db
+
+## TUI layout
+
+The screen has three vertical regions:
+
+| Region | Contents |
+| --- | --- |
+| Header | active search mode, pwd matching mode, fuzzy query, context hint |
+| Matches | selectable history rows |
+| Shortcuts | currently configured shortcuts |
+
+History rows render as:
+
+    <selection-marker> <status> <command>  <metadata...>
+
+Example with default metadata enabled:
+
+    ▶ ok cargo test  2023-11-14  /home/me/project
+
+`ok` means exit status `0`; `fail` means a non-zero exit status. The selected row has both a `▶` marker and reverse-video styling so it remains visible across terminal themes.
+
+Metadata is visible by default and can be toggled at runtime with `toggle_metadata` (`alt-m` by default). The configured metadata column order is preserved.
 
 ## Key bindings
 
@@ -47,11 +85,21 @@ Smoke-test DB loading without entering the TUI:
 | --- | --- |
 | text input | update fuzzy filter |
 | Backspace | remove one filter character |
-| Up/Down | move selection |
-| Tab | toggle all-history vs same-pwd filter |
-| Ctrl-X | toggle time-neighbor context for the selected command |
+| Up / Ctrl-K | select previous result |
+| Down / Ctrl-N | select next result |
+| Tab | toggle global vs same-pwd filter |
+| Ctrl-G | show global history |
+| Ctrl-P | show pwd history |
+| Ctrl-R | show Git-root history |
+| Ctrl-S | toggle exact vs subtree pwd matching |
+| Alt-M | toggle history metadata columns |
+| Ctrl-O | toggle time-neighbor context for the selected command |
+| Alt-] | expand context radius |
+| Alt-[ | shrink context radius |
 | Enter | accept selected command and print it to stdout |
 | Esc / Ctrl-C | quit without selecting |
+
+Every non-text-input action is configurable in TOML. A binding accepts either one token or an array of aliases. Invalid tokens and bindings assigned to multiple actions fail during startup instead of producing ambiguous runtime behavior.
 
 ## Shell integration
 
@@ -72,30 +120,124 @@ For Bash/readline, wire `cmdscope` as a command substitution in a custom `bind -
 
 ## Development
 
+Recommended checks before committing:
+
     cargo fmt --all -- --check
     cargo clippy --all-targets -- -D warnings
     cargo test --all-targets
+    cargo doc --no-deps
 
 The tests use TDD-friendly pure model/store behavior so the interactive terminal loop stays thin.
 
 ## Config
 
-`cmdscope` reads `--config`, `CMDSCOPE_CONFIG`, or `XDG_CONFIG_HOME/cmdscope/config.toml`.
-All shortcuts are configurable through TOML:
+`cmdscope` resolves configuration in this order:
+
+1. `--config <path>`
+2. `CMDSCOPE_CONFIG=<path>`
+3. `$XDG_CONFIG_HOME/cmdscope/config.toml`
+4. built-in defaults if no config file exists
+
+All non-text shortcuts are configurable through TOML:
 
     [keys]
     global = "ctrl-g"
     pwd = "ctrl-p"
     git_root = "ctrl-r"
+    toggle_scope = "tab"
     context = "ctrl-o"
     context_expand = "alt-]"
     context_shrink = "alt-["
     toggle_pwd_mode = "ctrl-s"
+    toggle_metadata = "alt-m"
+    select_next = ["down", "ctrl-n"]
+    select_previous = ["up", "ctrl-k"]
+    accept = "enter"
+    quit = ["esc", "ctrl-c"]
+    backspace = "backspace"
 
     [pwd]
     # exact: only the current directory
     # subdirs: current directory plus all subdirectories
     mode = "subdirs"
+
+    [ui]
+    # Columns shown when metadata is visible. Supported: "date", "pwd".
+    # Use an empty list for command-only rows by default.
+    history_columns = ["date", "pwd"]
+
+### Key token format
+
+Shortcut values use lowercase key tokens:
+
+| Token shape | Example |
+| --- | --- |
+| control character | `ctrl-g` |
+| alt character | `alt-]` |
+| plain character | `g` |
+| named key | `enter`, `esc`, `up`, `down`, `left`, `right`, `home`, `end`, `pageup`, `pagedown`, `backspace`, `delete`, `insert`, `tab` |
+
+`ctrl-m` is deliberately not the default metadata binding: many terminal protocols encode it identically to Enter. It remains configurable on terminals that can distinguish it.
+
+## Search performance
+
+The interactive search engine retains `skim`'s fzf-style dynamic-programming score, but avoids the surrounding work that previously dominated each keypress:
+
+1. Scope changes build a reusable vector of history indices.
+2. Extending a query scans only matches from the previous query layer.
+3. Backspace restores an already-ranked prefix layer without rescanning.
+4. A bounded heap keeps only the best 200 results instead of fully sorting every match.
+5. The model and renderer borrow immutable history rows by index instead of cloning commands.
+6. The event loop blocks while idle and redraws only after input or resize events.
+
+Run the reproducible comparison benchmark with:
+
+    cargo run --release --example filter_bench -- 100000
+
+The benchmark runs both the former full-rescan/full-sort shape and the incremental engine over the same generated history and query sequence. Timing varies by machine; the emitted `scanned` counts are deterministic evidence of the work reduction.
+
+Reference run on July 26, 2026 with 100,000 rows:
+
+| Strategy | Ten-query sequence | Relative |
+| --- | ---: | ---: |
+| Full rescan + full sort | 547 ms | 1.00× |
+| Incremental + bounded top-K | 341 ms | 1.61× faster |
+
+Once the query had narrowed the candidate set, subsequent characters scanned 10,000 rows rather than 100,000. The first broad characters still necessarily inspect the full active scope, so the improvement grows with query selectivity and history size.
+
+## Architecture
+
+    SQLite
+      │
+      ▼
+    history.rs ── immutable entries + cwd/id indexes
+      │
+      ├── scope.rs ── global/pwd/git-root semantics
+      │
+      ▼
+    search.rs ── incremental fuzzy session + top-K ranking
+      │
+      ▼
+    app.rs ── pure messages and selection/context state
+      │
+      ├── config.rs + keymap.rs ── TOML validation and event dispatch
+      │
+      ▼
+    tui.rs ── render-only Ratatui projection
+      │
+      ▼
+    terminal.rs ── terminal lifetime, input dispatch, blocking event loop
+
+`main.rs` now owns only CLI parsing and environment discovery. This keeps storage, filtering, state transitions, rendering, and terminal runtime in separate reviewable units.
+
+### Metadata columns
+
+| Column | Meaning |
+| --- | --- |
+| `date` | calendar date derived from the history timestamp |
+| `pwd` | working directory recorded for the history entry |
+
+The date renderer accepts common Atuin timestamp magnitudes and normalizes seconds, milliseconds, microseconds, or nanoseconds before rendering `YYYY-MM-DD`.
 
 Search modes:
 
@@ -113,12 +255,22 @@ Context review:
 - Expand or shrink time-neighbor radius with `context_expand` / `context_shrink`.
 - Typing, switching scope, or toggling pwd mode leaves context mode and resumes fuzzy filtering.
 
+## Rust API
+
+The crate exposes the pure core used by the binary: `HistoryEntry`, `HistoryStore`, `SearchEngine`, `SearchStats`, `SearchMode`, `SearchScope`, `AppConfig`, `KeyMap`, `AppModel`, `Msg`, and `tui::render`.
+
+Generate API docs locally:
+
+    cargo doc --no-deps --open
+
+The public API is intentionally small so tests can exercise behavior without starting a terminal.
+
 ## Release builds
 
 GitHub Actions runs CI on pushes and pull requests. Pushing a tag matching `v*` creates a GitHub Release and uploads packaged binaries:
 
-    git tag v0.1.0
-    git push origin v0.1.0
+    git tag v0.2.0
+    git push origin v0.2.0
 
 Release assets currently include:
 
@@ -126,4 +278,5 @@ Release assets currently include:
 - `cmdscope-macos.tar.gz`
 - `cmdscope-x86_64-pc-windows-msvc.zip`
 
-Each archive contains the `cmdscope` executable, `README.md`, and `examples.config.toml`.
+Each archive contains the `cmdscope` executable, `README.md`, `CHANGELOG.md`,
+and `examples.config.toml`.

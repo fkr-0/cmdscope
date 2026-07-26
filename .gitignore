@@ -1,4 +1,5 @@
 /target/
+/cmdscope
 *.db
 *.db-shm
 *.db-wal

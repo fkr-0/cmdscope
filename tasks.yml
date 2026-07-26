@@ -1,0 +1,78 @@
+version: 1
+project: cmdscope
+reviewed_at: 2026-07-26
+release_candidate: 0.2.0
+
+open: []
+
+verification:
+  formatting: cargo fmt --all -- --check
+  lint: cargo clippy --all-targets -- -D warnings
+  tests: 27 passed
+  docs: cargo doc --no-deps
+  real_db_smoke: passed against ./history.db
+  benchmark:
+    rows: 100000
+    legacy_total_us: 547493
+    incremental_total_us: 341057
+    sequence_speedup: 1.61
+
+completed:
+  - id: PERF-001
+    title: Replace full-rescan/full-sort filtering hot path
+    status: done
+    evidence:
+      - src/search.rs
+      - tests/search_performance_test.rs
+      - examples/filter_bench.rs
+  - id: PERF-002
+    title: Stop redrawing while the terminal is idle
+    status: done
+    evidence:
+      - src/main.rs
+      - src/terminal.rs
+  - id: ARCH-002
+    title: Model search and context views as a single valid state
+    status: done
+    evidence:
+      - src/app.rs
+      - tests/app_update_test.rs
+  - id: ARCH-003
+    title: Decompose model refresh and TUI rendering responsibilities
+    status: done
+    evidence:
+      - src/app.rs
+      - src/tui.rs
+  - id: PERF-003
+    title: Remove command and pwd cloning from the render path
+    status: done
+    evidence:
+      - src/tui.rs
+  - id: INPUT-001
+    title: Support documented hyphenated page key aliases
+    status: done
+    evidence:
+      - src/keymap.rs
+      - tests/keymap_config_test.rs
+  - id: CONFIG-001
+    title: Configure all non-text-input actions from TOML
+    status: done
+    evidence:
+      - src/config.rs
+      - src/keymap.rs
+      - tests/keymap_config_test.rs
+  - id: ARCH-001
+    title: Separate history, scope, search, model, keymap, and rendering layers
+    status: done
+    evidence:
+      - src/lib.rs
+      - src/history.rs
+      - src/scope.rs
+      - src/search.rs
+      - src/app.rs
+      - src/keymap.rs
+  - id: RELIABILITY-001
+    title: Restore terminal state on normal and error exits
+    status: done
+    evidence:
+      - src/terminal.rs

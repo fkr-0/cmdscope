@@ -95,7 +95,7 @@ jobs:
         run: |
           mkdir -p dist
           cp "target/release/$BINARY" dist/
-          cp README.md examples.config.toml dist/
+          cp README.md CHANGELOG.md examples.config.toml dist/
           tar -czf "$ASSET_NAME" -C dist .
 
       - name: Package zip
@@ -107,7 +107,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           Copy-Item "target/release/$env:BINARY" dist/
-          Copy-Item README.md, examples.config.toml dist/
+          Copy-Item README.md, CHANGELOG.md, examples.config.toml dist/
           Compress-Archive -Path dist/* -DestinationPath $env:ASSET_NAME -Force
 
       - name: Upload asset to GitHub release

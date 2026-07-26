@@ -2,10 +2,21 @@
 global = "ctrl-g"
 pwd = "ctrl-p"
 git_root = "ctrl-r"
+toggle_scope = "tab"
 context = "ctrl-o"
 context_expand = "alt-]"
 context_shrink = "alt-["
 toggle_pwd_mode = "ctrl-s"
+toggle_metadata = "alt-m"
+select_next = ["down", "ctrl-n"]
+select_previous = ["up", "ctrl-k"]
+accept = "enter"
+quit = ["esc", "ctrl-c"]
+backspace = "backspace"
 
 [pwd]
 mode = "subdirs"
+
+[ui]
+# Columns shown when metadata is visible. Supported: "date", "pwd".
+history_columns = ["date", "pwd"]
