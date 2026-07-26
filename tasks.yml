@@ -1,23 +1,59 @@
 version: 1
 project: cmdscope
 reviewed_at: 2026-07-26
-release_candidate: 0.2.1
+release_candidate: 0.2.2
 
 open: []
 
 verification:
   formatting: cargo fmt --all -- --check
   lint: cargo clippy --all-targets -- -D warnings
-  tests: 49 passed
+  tests: 64 passed
   docs: cargo doc --no-deps
   real_db_smoke: passed against ./history.db
   benchmark:
     rows: 100000
-    legacy_total_us: 669509
-    incremental_total_us: 413378
-    sequence_speedup: 1.62
+    legacy_total_us: 563406
+    incremental_total_us: 354643
+    sequence_speedup: 1.59
 
 completed:
+  - id: COMPAT-001
+    title: Support older Atuin schemas and diagnose incompatible databases
+    status: done
+    evidence:
+      - src/history.rs
+      - tests/sqlite_load_test.rs
+      - tests/cli_test.rs
+  - id: BUG-007
+    title: Anchor context safely with duplicate history IDs
+    status: done
+    evidence:
+      - src/app.rs
+      - src/history.rs
+      - src/search.rs
+      - tests/app_update_test.rs
+      - tests/history_store_test.rs
+  - id: INPUT-002
+    title: Harden extended modifiers and Unicode shortcuts
+    status: done
+    evidence:
+      - src/keymap.rs
+      - tests/keymap_config_test.rs
+  - id: DISPLAY-001
+    title: Neutralize bidi and zero-width terminal display controls
+    status: done
+    evidence:
+      - src/tui.rs
+      - tests/tui_render_test.rs
+  - id: SEARCH-001
+    title: Preserve queries and accurate instrumentation across scope changes
+    status: done
+    evidence:
+      - src/search.rs
+      - src/app.rs
+      - tests/search_correctness_test.rs
+      - tests/scope_config_test.rs
   - id: BUG-001
     title: Keep terminal control output out of shell command substitution
     status: done

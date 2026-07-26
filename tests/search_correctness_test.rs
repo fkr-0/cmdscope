@@ -108,3 +108,24 @@ fn empty_store_and_zero_result_limit_are_safe() {
     assert!(zero_limit.results().is_empty());
     assert!(zero_limit.stats().matched > 0);
 }
+
+#[test]
+fn changing_scope_preserves_the_active_query() {
+    let store = store();
+    let mut engine = SearchEngine::new(store, 37);
+    engine.set_query("cargo");
+
+    engine.set_scope(cmdscope::SearchScope::pwd(
+        Some("/repo"),
+        cmdscope::PwdMatchMode::Exact,
+    ));
+
+    assert_eq!(engine.query(), "cargo");
+    assert!(!engine.results().is_empty());
+    assert!(
+        engine
+            .results()
+            .iter()
+            .all(|&index| engine.entry(index).cwd == "/repo")
+    );
+}

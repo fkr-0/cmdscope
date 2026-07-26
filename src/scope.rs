@@ -123,7 +123,7 @@ pub(crate) fn normalized_path_key(path: &str) -> String {
         normalized.push_str(component);
     }
     if windows_like {
-        normalized.make_ascii_lowercase();
+        normalized = normalized.to_lowercase();
     }
     normalized
 }

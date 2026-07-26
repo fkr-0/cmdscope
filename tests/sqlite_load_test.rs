@@ -33,3 +33,114 @@ fn loads_atuin_history_schema_and_ignores_deleted_rows() {
         "cargo build"
     );
 }
+
+#[test]
+fn loads_older_schema_without_soft_delete_column() {
+    let db = NamedTempFile::new().unwrap();
+    let connection = Connection::open(db.path()).unwrap();
+    connection
+        .execute_batch(
+            "create table history (
+                id text primary key,
+                timestamp integer not null,
+                duration integer not null,
+                exit integer not null,
+                command text not null,
+                cwd text not null,
+                session text not null,
+                hostname text not null
+            );
+            insert into history values ('old', 20, 10, 0, 'echo old', '/repo', 's1', 'host');",
+        )
+        .unwrap();
+
+    let store = HistoryStore::load_sqlite(db.path()).unwrap();
+
+    assert_eq!(store.len(), 1);
+    assert_eq!(store.entries()[0].command, "echo old");
+}
+
+#[test]
+fn reports_missing_table_and_required_columns_clearly() {
+    let no_table = NamedTempFile::new().unwrap();
+    Connection::open(no_table.path()).unwrap();
+    let error = HistoryStore::load_sqlite(no_table.path()).unwrap_err();
+    let error = format!("{error:#}");
+    assert!(
+        error.contains("does not contain a history table"),
+        "{error}"
+    );
+    assert!(
+        error.contains(&no_table.path().display().to_string()),
+        "{error}"
+    );
+
+    let incomplete = NamedTempFile::new().unwrap();
+    let connection = Connection::open(incomplete.path()).unwrap();
+    connection
+        .execute_batch("create table history (id text primary key, timestamp integer not null);")
+        .unwrap();
+    let error = HistoryStore::load_sqlite(incomplete.path()).unwrap_err();
+    let error = format!("{error:#}");
+    assert!(error.contains("missing required columns"), "{error}");
+    assert!(error.contains("duration"), "{error}");
+    assert!(error.contains("hostname"), "{error}");
+}
+
+#[test]
+fn equal_timestamps_have_deterministic_id_order() {
+    let db = NamedTempFile::new().unwrap();
+    let connection = Connection::open(db.path()).unwrap();
+    connection
+        .execute_batch(
+            "create table history (
+                id text primary key,
+                timestamp integer not null,
+                duration integer not null,
+                exit integer not null,
+                command text not null,
+                cwd text not null,
+                session text not null,
+                hostname text not null
+            );
+            insert into history values ('z-id', 20, 0, 0, 'z command', '/repo', 's', 'h');
+            insert into history values ('a-id', 20, 0, 0, 'a command', '/repo', 's', 'h');",
+        )
+        .unwrap();
+
+    let store = HistoryStore::load_sqlite(db.path()).unwrap();
+    let ids = store
+        .search("", SearchMode::All, None, 10)
+        .into_iter()
+        .map(|entry| entry.id)
+        .collect::<Vec<_>>();
+
+    assert_eq!(ids, vec!["z-id", "a-id"]);
+}
+
+#[test]
+fn incompatible_row_values_include_database_context() {
+    let db = NamedTempFile::new().unwrap();
+    let connection = Connection::open(db.path()).unwrap();
+    connection
+        .execute_batch(
+            "create table history (
+                id text primary key,
+                timestamp integer not null,
+                duration integer not null,
+                exit integer not null,
+                command blob not null,
+                cwd text not null,
+                session text not null,
+                hostname text not null
+            );
+            insert into history values ('bad', 20, 0, 0, x'ff', '/repo', 's', 'h');",
+        )
+        .unwrap();
+
+    let error = HistoryStore::load_sqlite(db.path()).unwrap_err();
+    let error = format!("{error:#}");
+
+    assert!(error.contains("incompatible values"), "{error}");
+    assert!(error.contains(&db.path().display().to_string()), "{error}");
+}

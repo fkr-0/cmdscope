@@ -1,7 +1,12 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 use cmdscope::{AppConfig, HistoryStore};
-use std::{env, path::PathBuf, process::Command};
+use std::{
+    env,
+    io::{self, Write},
+    path::PathBuf,
+    process::Command,
+};
 
 mod terminal;
 
@@ -28,7 +33,7 @@ fn main() -> Result<()> {
     let store = HistoryStore::load_sqlite(&args.db)?;
     if args.print_first {
         if let Some(entry) = store.search("", cmdscope::SearchMode::All, None, 1).first() {
-            println!("{}", entry.command);
+            write_command(&entry.command)?;
         }
         return Ok(());
     }
@@ -40,9 +45,14 @@ fn main() -> Result<()> {
     let selected =
         terminal::run_tui(store, cwd, git_root, config, keymap).context("terminal UI failed")?;
     if let Some(command) = selected {
-        println!("{}", command);
+        write_command(&command)?;
     }
     Ok(())
+}
+
+fn write_command(command: &str) -> Result<()> {
+    let stdout = io::stdout();
+    writeln!(stdout.lock(), "{command}").context("failed to write selected command")
 }
 
 fn default_config_path() -> PathBuf {

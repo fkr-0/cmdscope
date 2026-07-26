@@ -26,7 +26,7 @@ pub enum Msg {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum ViewMode {
     Search,
-    Context { anchor_id: String, radius: usize },
+    Context { anchor_index: usize, radius: usize },
 }
 
 impl From<KeyAction> for Msg {
@@ -126,18 +126,17 @@ impl AppModel {
             Msg::ShowPwd => self.switch_mode(SearchMode::SamePwd),
             Msg::ShowGitRoot => self.switch_mode(SearchMode::GitRoot),
             Msg::ToggleContext => {
-                if let ViewMode::Context { anchor_id, .. } = &self.view_mode {
-                    let anchor_id = anchor_id.clone();
+                if let ViewMode::Context { anchor_index, .. } = self.view_mode {
                     self.leave_context();
                     self.refresh_results();
                     self.selected_index = self
                         .visible
                         .iter()
-                        .position(|&index| self.search.entry(index).id == anchor_id)
+                        .position(|&index| index == anchor_index)
                         .unwrap_or(0);
-                } else if let Some(selected) = self.selected() {
+                } else if let Some(&anchor_index) = self.visible.get(self.selected_index) {
                     self.view_mode = ViewMode::Context {
-                        anchor_id: selected.id.clone(),
+                        anchor_index,
                         radius: 1,
                     };
                     self.refresh_context();
@@ -191,7 +190,9 @@ impl AppModel {
 
     fn refresh_results(&mut self) {
         self.search.set_scope(self.scope());
-        self.search.set_query(&self.query);
+        if self.search.query() != self.query {
+            self.search.set_query(&self.query);
+        }
         self.visible.clear();
         self.visible.extend_from_slice(self.search.results());
         if self.selected_index >= self.visible.len() {
@@ -200,16 +201,19 @@ impl AppModel {
     }
 
     fn refresh_context(&mut self) {
-        let (anchor_id, radius) = match &self.view_mode {
+        let (anchor_index, radius) = match self.view_mode {
             ViewMode::Search => return,
-            ViewMode::Context { anchor_id, radius } => (anchor_id.clone(), *radius),
+            ViewMode::Context {
+                anchor_index,
+                radius,
+            } => (anchor_index, radius),
         };
-        if let Some(context) = self.search.context_around(&anchor_id, radius) {
+        if let Some(context) = self.search.context_around_index(anchor_index, radius) {
             self.visible = context;
             self.selected_index = self
                 .visible
                 .iter()
-                .position(|&index| self.search.entry(index).id == anchor_id)
+                .position(|&index| index == anchor_index)
                 .unwrap_or(0);
         } else {
             self.leave_context();

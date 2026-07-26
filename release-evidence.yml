@@ -3,11 +3,11 @@ release:
   unit: repository
   project: cmdscope
   date: 2026-07-26
-  base_revision: c0b9cad06a6ca29a1fff43edc8a859cffe2bb272
+  base_revision: d8859c7baad5cd4849076940a99f50027be3eb03
   release_revision: HEAD
-  version_before: 0.2.0
-  version_after: 0.2.1
-  proposed_tag: v0.2.1
+  version_before: 0.2.1
+  version_after: 0.2.2
+  proposed_tag: v0.2.2
   tag_created: false
   push_state: not_requested
   publish_state: not_requested
@@ -20,13 +20,11 @@ metadata:
     - README.md
     - release-evidence.yml
     - src/app.rs
-    - src/config.rs
     - src/history.rs
     - src/keymap.rs
     - src/main.rs
     - src/scope.rs
     - src/search.rs
-    - src/terminal.rs
     - src/tui.rs
     - tasks.yml
     - tests/app_update_test.rs
@@ -35,80 +33,93 @@ metadata:
     - tests/keymap_config_test.rs
     - tests/scope_config_test.rs
     - tests/search_correctness_test.rs
+    - tests/sqlite_load_test.rs
     - tests/tui_render_test.rs
   version_agreement:
-    cargo_metadata: 0.2.1
-    cargo_lock: 0.2.1
-    cli_version: cmdscope 0.2.1
+    cargo_metadata: 0.2.2
+    cargo_lock: 0.2.2
+    cli_version: cmdscope 0.2.2
 
 verification:
   - name: formatting
     command: cargo fmt --all -- --check
     exit_code: 0
-    duration_ms: 185
+    duration_ms: 126
   - name: strict_clippy
     command: cargo clippy --all-targets --locked -- -D warnings
     exit_code: 0
-    duration_ms: 1271
+    duration_ms: 1045
   - name: debug_tests
     command: cargo test --all-targets --locked
     exit_code: 0
-    duration_ms: 969
-    result: 49 passed; 0 failed
+    duration_ms: 1341
+    result: 64 passed; 0 failed
   - name: release_tests
     command: cargo test --release --all-targets --locked
     exit_code: 0
-    duration_ms: 495
-    result: 49 passed; 0 failed
+    duration_ms: 3297
+    result: 64 passed; 0 failed
   - name: documentation_tests
     command: cargo test --doc --locked
     exit_code: 0
-    duration_ms: 371
+    duration_ms: 741
     result: 0 passed; 0 failed
   - name: documentation
     command: cargo doc --no-deps --locked
     exit_code: 0
-    duration_ms: 1147
+    duration_ms: 1360
   - name: release_build
     command: cargo build --release --locked
     exit_code: 0
-    duration_ms: 311
-  - name: cli_version
-    command: target/release/cmdscope --version
-    exit_code: 0
-    duration_ms: 4
-    result: cmdscope 0.2.1
-  - name: real_database_smoke
-    command: target/release/cmdscope --config ./examples.config.toml --db ./history.db --print-first
-    exit_code: 0
-    duration_ms: 190
-  - name: interactive_accept_pty_smoke
-    command: target/release/cmdscope --config ./examples.config.toml --db ./history.db
-    exit_code: 0
-    result: accepted command was the only stdout payload; no escape byte reached stdout; alternate screen closed; cursor restored
-  - name: interactive_cancel_pty_smoke
-    command: target/release/cmdscope --config ./examples.config.toml --db ./history.db
-    exit_code: 0
-    result: cancel produced empty stdout; alternate screen closed; cursor restored
-  - name: differential_search_correctness
-    command: cargo test --test search_correctness_test --locked
-    exit_code: 0
-    result: incremental query transitions matched fresh full rescans, including case and Unicode queries
+    duration_ms: 111
   - name: cargo_package_manifest
     command: cargo package --allow-dirty --list --locked
     exit_code: 0
-    duration_ms: 139
+    duration_ms: 59
     result: package metadata complete; no manifest warning
+  - name: cli_version
+    command: target/release/cmdscope --version
+    exit_code: 0
+    duration_ms: 2
+    result: cmdscope 0.2.2
+  - name: real_database_smoke
+    command: target/release/cmdscope --config ./examples.config.toml --db ./history.db --print-first
+    exit_code: 0
+    duration_ms: 238
+  - name: old_schema_and_multiline_cli
+    command: cargo test --release --test cli_test print_first_supports_old_schema_and_exact_multiline_output --locked
+    exit_code: 0
+    result: older schema loaded and multiline command was emitted byte-for-byte with one final newline
+  - name: sqlite_schema_compatibility
+    command: cargo test --release --test sqlite_load_test --locked
+    exit_code: 0
+    result: current and older schemas loaded; deleted rows filtered; malformed schemas and values reported with database context
+  - name: interactive_accept_pty_smoke
+    command: target/release/cmdscope --config ./examples.config.toml --db ./history.db
+    exit_code: 0
+    result: stdout exactly matched print-first output; no escape byte reached stdout; alternate screen and cursor state restored
+  - name: interactive_cancel_pty_smoke
+    command: target/release/cmdscope --config ./examples.config.toml --db ./history.db
+    exit_code: 0
+    result: cancel produced empty stdout; alternate screen and cursor state restored
+  - name: differential_search_correctness
+    command: cargo test --release --test search_correctness_test --locked
+    exit_code: 0
+    result: incremental query transitions matched full rescans and active query survived scope changes
   - name: filtering_benchmark
     command: target/release/examples/filter_bench 100000
     exit_code: 0
-    duration_ms: 1108
+    duration_ms: 952
     rows: 100000
-    legacy_total_us: 669509
-    incremental_total_us: 413378
-    sequence_speedup: 1.62
+    legacy_total_us: 563406
+    incremental_total_us: 354643
+    sequence_speedup: 1.59
     narrowed_scan_rows: 10000
     full_scope_rows: 100000
+  - name: todo_markers
+    command: extract_todos TODO FIXME HACK XXX
+    exit_code: 0
+    result: none found
   - name: machine_interpreter
     command: cargo miri test --lib
     status: omitted
@@ -117,15 +128,15 @@ verification:
 quality:
   automated_score: 94
   remaining_findings:
-    - generic cyclomatic-complexity warnings in keymap, scope, and TUI modules; strict Clippy reports no warning or error
+    - generic aggregate cyclomatic-complexity warnings in keymap, scope, and TUI modules; strict Clippy reports no warning or error
 
 artifacts:
   - path: target/release/cmdscope
-    size_bytes: 4903176
-    sha256: a2cdb0bc99ceac4320a86685ccf6c132042dd63a51a904aa2fa89d3d46222064
-  - path: target/release-evidence/cmdscope-0.2.1-x86_64-unknown-linux-gnu.tar.gz
-    size_bytes: 2186994
-    sha256: 5e5f7dc4186028e327c884ca9b5da90b990ec81d445268200e1eec7b36d2013a
+    size_bytes: 4975136
+    sha256: eb29a06f74570de0df5d338642562408f9290b9c0ddbbf7a169c7f7fc8e4eaf4
+  - path: target/release-evidence/cmdscope-0.2.2-x86_64-unknown-linux-gnu.tar.gz
+    size_bytes: 2211638
+    sha256: ccbb03c769b070b4e062ef18e8130fe802fe3fccc0c95620ac017d3f521bf82b
     contents:
       - cmdscope
       - README.md

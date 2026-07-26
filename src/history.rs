@@ -1,7 +1,12 @@
 use crate::{SearchEngine, SearchMode, SearchScope, scope::normalized_path_key};
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use rusqlite::{Connection, OpenFlags};
-use std::{collections::HashMap, path::Path, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    path::Path,
+    sync::Arc,
+    time::Duration,
+};
 
 /// One shell-history row loaded from an Atuin-compatible `history` table.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -14,6 +19,54 @@ pub struct HistoryEntry {
     pub cwd: String,
     pub session: String,
     pub hostname: String,
+}
+
+const REQUIRED_HISTORY_COLUMNS: &[&str] = &[
+    "id",
+    "timestamp",
+    "duration",
+    "exit",
+    "command",
+    "cwd",
+    "session",
+    "hostname",
+];
+
+fn history_columns(connection: &Connection, path: &Path) -> Result<HashSet<String>> {
+    let mut statement = connection
+        .prepare("pragma table_info(history)")
+        .with_context(|| format!("failed to inspect history schema in {}", path.display()))?;
+    let columns = statement
+        .query_map([], |row| row.get::<_, String>(1))
+        .with_context(|| format!("failed to inspect history schema in {}", path.display()))?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .with_context(|| format!("failed to inspect history schema in {}", path.display()))?;
+    if columns.is_empty() {
+        bail!(
+            "history database {} does not contain a history table",
+            path.display()
+        );
+    }
+    Ok(columns
+        .into_iter()
+        .map(|column| column.to_ascii_lowercase())
+        .collect())
+}
+
+fn validate_history_columns(columns: &HashSet<String>, path: &Path) -> Result<()> {
+    let missing = REQUIRED_HISTORY_COLUMNS
+        .iter()
+        .copied()
+        .filter(|column| !columns.contains(*column))
+        .collect::<Vec<_>>();
+    if !missing.is_empty() {
+        bail!(
+            "history database {} is missing required columns: {}",
+            path.display(),
+            missing.join(", ")
+        );
+    }
+    Ok(())
 }
 
 fn simple_scope(mode: SearchMode, current_pwd: Option<&str>) -> SearchScope {
@@ -52,21 +105,28 @@ impl HistoryEntry {
 pub struct HistoryStore {
     entries: Arc<[HistoryEntry]>,
     cwd_index: Arc<HashMap<String, Arc<[usize]>>>,
-    id_index: Arc<HashMap<String, usize>>,
+    id_index: Arc<HashMap<String, Option<usize>>>,
 }
 
 impl HistoryStore {
     pub fn from_entries(mut entries: Vec<HistoryEntry>) -> Self {
-        entries.sort_by_key(|entry| entry.timestamp);
+        entries.sort_by(|left, right| {
+            left.timestamp
+                .cmp(&right.timestamp)
+                .then_with(|| left.id.cmp(&right.id))
+        });
 
         let mut cwd_index = HashMap::<String, Vec<usize>>::new();
-        let mut id_index = HashMap::with_capacity(entries.len());
+        let mut id_index = HashMap::<String, Option<usize>>::with_capacity(entries.len());
         for (index, entry) in entries.iter().enumerate() {
             cwd_index
                 .entry(normalized_path_key(&entry.cwd))
                 .or_default()
                 .push(index);
-            id_index.insert(entry.id.clone(), index);
+            id_index
+                .entry(entry.id.clone())
+                .and_modify(|existing| *existing = None)
+                .or_insert(Some(index));
         }
 
         Self {
@@ -88,12 +148,25 @@ impl HistoryStore {
             OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
         )
         .with_context(|| format!("failed to open history database {}", path.display()))?;
+        connection
+            .busy_timeout(Duration::from_secs(1))
+            .with_context(|| format!("failed to configure history database {}", path.display()))?;
 
-        let mut statement = connection.prepare(
+        let columns = history_columns(&connection, path)?;
+        validate_history_columns(&columns, path)?;
+        let deleted_filter = if columns.contains("deleted_at") {
+            " where deleted_at is null"
+        } else {
+            ""
+        };
+        let query = format!(
             "select id, timestamp, duration, exit, command, cwd, session, hostname \
-             from history where deleted_at is null order by timestamp asc",
-        )?;
-        let entries = statement
+             from history{deleted_filter} order by timestamp asc, id asc"
+        );
+        let mut statement = connection
+            .prepare(&query)
+            .with_context(|| format!("failed to prepare history query for {}", path.display()))?;
+        let rows = statement
             .query_map([], |row| {
                 Ok(HistoryEntry {
                     id: row.get(0)?,
@@ -105,8 +178,16 @@ impl HistoryStore {
                     session: row.get(6)?,
                     hostname: row.get(7)?,
                 })
-            })?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
+            })
+            .with_context(|| format!("failed to read history rows from {}", path.display()))?;
+        let entries = rows
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .with_context(|| {
+                format!(
+                    "history rows in {} have incompatible values",
+                    path.display()
+                )
+            })?;
 
         Ok(Self::from_entries(entries))
     }
@@ -128,7 +209,7 @@ impl HistoryStore {
     }
 
     pub(crate) fn index_for_id(&self, id: &str) -> Option<usize> {
-        self.id_index.get(id).copied()
+        self.id_index.get(id).copied().flatten()
     }
 
     /// Compatibility one-shot search. Interactive use should reuse [`SearchEngine`].
@@ -217,6 +298,15 @@ impl HistoryStore {
         scope: &SearchScope,
     ) -> Option<Vec<usize>> {
         let selected_index = self.index_for_id(selected_id)?;
+        self.context_indices_for_index(selected_index, radius, scope)
+    }
+
+    pub(crate) fn context_indices_for_index(
+        &self,
+        selected_index: usize,
+        radius: usize,
+        scope: &SearchScope,
+    ) -> Option<Vec<usize>> {
         let scoped = self.indices_for_scope(scope);
         let position = scoped.binary_search(&selected_index).ok()?;
         let start = position.saturating_sub(radius);

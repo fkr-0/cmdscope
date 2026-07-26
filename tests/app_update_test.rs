@@ -12,6 +12,29 @@ fn model() -> AppModel {
 }
 
 #[test]
+fn duplicate_ids_do_not_move_context_away_from_the_selected_entry() {
+    let mut model = AppModel::new(
+        HistoryStore::from_entries(vec![
+            HistoryEntry::new("dup", 100, 0, "old match", "/repo", "s", "h"),
+            HistoryEntry::new("middle", 200, 0, "neighbor", "/repo", "s", "h"),
+            HistoryEntry::new("dup", 300, 0, "new other", "/repo", "s", "h"),
+        ]),
+        Some("/repo".to_string()),
+    );
+    for character in "old match".chars() {
+        model.update(Msg::Input(character));
+    }
+
+    model.update(Msg::ToggleContext);
+
+    assert_eq!(
+        model.selected().map(|entry| entry.command.as_str()),
+        Some("old match")
+    );
+    assert_eq!(model.visible_commands(), vec!["old match", "neighbor"]);
+}
+
+#[test]
 fn leaving_context_restores_the_anchor_selection() {
     let mut model = AppModel::new(
         HistoryStore::from_entries(vec![

@@ -28,7 +28,10 @@ pub fn render(model: &AppModel, config: &AppConfig, area: Rect, buf: &mut Buffer
 }
 
 fn display_text(input: &str) -> Cow<'_, str> {
-    if input.chars().all(|character| !character.is_control()) {
+    if input
+        .chars()
+        .all(|character| !needs_visible_replacement(character))
+    {
         return Cow::Borrowed(input);
     }
 
@@ -38,11 +41,23 @@ fn display_text(input: &str) -> Cow<'_, str> {
             '\n' => output.push('⏎'),
             '\r' => output.push('␍'),
             '\t' => output.push('⇥'),
-            character if character.is_control() => output.push('�'),
+            character if needs_visible_replacement(character) => output.push('�'),
             character => output.push(character),
         }
     }
     Cow::Owned(output)
+}
+
+fn needs_visible_replacement(character: char) -> bool {
+    character.is_control()
+        || matches!(
+            character,
+            '\u{061c}'
+                | '\u{200b}'..='\u{200f}'
+                | '\u{202a}'..='\u{202e}'
+                | '\u{2060}'..='\u{206f}'
+                | '\u{feff}'
+        )
 }
 
 fn render_header(model: &AppModel, area: Rect, buf: &mut Buffer) {
@@ -88,7 +103,7 @@ fn header_lines<'a>(model: &'a AppModel) -> Vec<Line<'a>> {
             Span::raw(mode),
             Span::raw("  "),
             Span::styled("query ", Style::default().add_modifier(Modifier::BOLD)),
-            Span::raw(model.query()),
+            Span::raw(display_text(model.query())),
         ]),
         Line::from(if model.in_context_mode() {
             "reviewing time context; filter text is ignored until leaving context".to_string()

@@ -74,3 +74,17 @@ fn context_can_be_limited_to_same_pwd() {
     let commands: Vec<_> = context.iter().map(|entry| entry.command.as_str()).collect();
     assert_eq!(commands, vec!["cargo test", "git commit", "rg ratatui"]);
 }
+
+#[test]
+fn duplicate_ids_are_rejected_as_ambiguous_for_id_based_context() {
+    let store = HistoryStore::from_entries(vec![
+        HistoryEntry::new("dup", 100, 0, "first", "/repo", "s", "h"),
+        HistoryEntry::new("dup", 200, 0, "second", "/repo", "s", "h"),
+    ]);
+
+    assert!(
+        store
+            .context_around("dup", 1, SearchMode::All, None)
+            .is_none()
+    );
+}

@@ -46,6 +46,23 @@ fn filesystem_root_scope_includes_descendants() {
 }
 
 #[test]
+fn windows_unicode_paths_match_case_insensitively() {
+    let store = HistoryStore::from_entries(vec![
+        HistoryEntry::new("1", 100, 0, "unicode", r"C:\Üser\Projekt", "s", "h"),
+        HistoryEntry::new("2", 110, 0, "other", r"C:\Üser\Else", "s", "h"),
+    ]);
+    let scope = SearchScope::pwd(Some("c:/üser/projekt"), PwdMatchMode::Exact);
+
+    let commands = store
+        .search_with_scope("", &scope, 10)
+        .into_iter()
+        .map(|entry| entry.command)
+        .collect::<Vec<_>>();
+
+    assert_eq!(commands, vec!["unicode"]);
+}
+
+#[test]
 fn windows_paths_match_across_separator_and_case_variants() {
     let store = HistoryStore::from_entries(vec![
         HistoryEntry::new("1", 100, 0, "root", r"C:\\Repo", "s", "h"),
@@ -117,6 +134,24 @@ fn git_root_scope_includes_repository_tree() {
         .collect();
 
     assert_eq!(commands, vec!["nested cmd", "src cmd", "root cmd"]);
+}
+
+#[test]
+fn scope_change_stats_report_the_required_rescan() {
+    let mut model = AppModel::new_with_environment(
+        store(),
+        Some("/repo".to_string()),
+        Some("/repo".to_string()),
+        PwdMatchMode::Exact,
+    );
+    for character in "cmd".chars() {
+        model.update(Msg::Input(character));
+    }
+
+    model.update(Msg::ShowPwd);
+
+    assert!(!model.search_stats().cache_hit);
+    assert_eq!(model.search_stats().scanned, 1);
 }
 
 #[test]

@@ -99,8 +99,12 @@ impl SearchEngine {
 
     pub fn set_scope(&mut self, scope: SearchScope) {
         if self.scope != scope {
+            let query = self.query().to_string();
             self.scope = scope;
             self.reset_scope();
+            if !query.is_empty() {
+                self.set_query(&query);
+            }
         }
     }
 
@@ -150,6 +154,14 @@ impl SearchEngine {
 
     pub fn context_around(&self, selected_id: &str, radius: usize) -> Option<Vec<usize>> {
         let selected_index = self.store.index_for_id(selected_id)?;
+        self.context_around_index(selected_index, radius)
+    }
+
+    pub(crate) fn context_around_index(
+        &self,
+        selected_index: usize,
+        radius: usize,
+    ) -> Option<Vec<usize>> {
         let scoped = &self.layers.first().expect("base query layer").candidates;
         let position = scoped.binary_search(&selected_index).ok()?;
         let start = position.saturating_sub(radius);

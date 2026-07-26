@@ -85,7 +85,8 @@ Metadata is visible by default and can be toggled at runtime with `toggle_metada
 
 Commands and working directories containing tabs, newlines, escape bytes, or
 other control characters are rendered with safe visible symbols so one history
-entry cannot corrupt adjacent TUI rows.
+entry cannot corrupt adjacent TUI rows. Bidi overrides, directional isolates,
+zero-width format characters, and the typed query receive the same treatment.
 
 ## Key bindings
 
@@ -108,6 +109,10 @@ entry cannot corrupt adjacent TUI rows.
 | Esc / Ctrl-C | quit without selecting |
 
 Every non-text-input action is configurable in TOML. A binding accepts either one token or an array of aliases. Invalid tokens and bindings assigned to multiple actions fail during startup instead of producing ambiguous runtime behavior.
+
+Modified Unicode characters are supported, for example `ctrl-ä` and
+`shift-ö`. Super, Hyper, and protocol-level Meta event modifiers are not
+configurable and are rejected rather than being mistaken for plain keys.
 
 ## Shell integration
 
@@ -195,11 +200,28 @@ Shortcut values use lowercase key tokens:
 
 `ctrl-m` is deliberately not the default metadata binding: many terminal protocols encode it identically to Enter. It remains configurable on terminals that can distinguish it.
 
+## Database compatibility
+
+`cmdscope` opens the database read-only and accepts both current Atuin history
+tables and older compatible tables without `deleted_at`. The required columns
+are:
+
+    id, timestamp, duration, exit, command, cwd, session, hostname
+
+When `deleted_at` exists, soft-deleted rows are excluded. Missing tables,
+missing required columns, and incompatible row values produce path-qualified
+diagnostics. A short SQLite busy timeout tolerates brief concurrent writer
+transactions without changing the database.
+
+Rows are ordered by timestamp and then ID, giving deterministic results and
+context windows when multiple commands share a timestamp.
+
 ## Search performance
 
 The interactive search engine retains `skim`'s fzf-style dynamic-programming score, but avoids the surrounding work that previously dominated each keypress:
 
 1. Scope changes build a reusable vector of history indices.
+   The active fuzzy query is retained and applied to the new scope.
 2. Extending a query scans only matches from the previous query layer.
 3. Backspace restores an already-ranked prefix layer without rescanning.
 4. Prefix caching is bounded to 32 layers so long queries cannot grow memory without limit.
@@ -217,8 +239,8 @@ Reference run on July 26, 2026 with 100,000 rows:
 
 | Strategy | Ten-query sequence | Relative |
 | --- | ---: | ---: |
-| Full rescan + full sort | 670 ms | 1.00× |
-| Incremental + bounded top-K | 413 ms | 1.62× faster |
+| Full rescan + full sort | 563 ms | 1.00× |
+| Incremental + bounded top-K | 355 ms | 1.59× faster |
 
 Once the query had narrowed the candidate set, subsequent characters scanned 10,000 rows rather than 100,000. The first broad characters still necessarily inspect the full active scope, so the improvement grows with query selectivity and history size.
 
@@ -268,7 +290,7 @@ Search modes:
 Unavailable pwd or Git-root context produces an empty result set rather than
 silently falling back to global history. Unix root scopes include all absolute
 descendants; Windows drive and UNC paths are matched case-insensitively across
-slash styles.
+slash styles, including non-ASCII case pairs.
 
 Context review:
 
@@ -276,6 +298,9 @@ Context review:
 - The active filter string is ignored while reviewing context.
 - Expand or shrink time-neighbor radius with `context_expand` / `context_shrink`.
 - Typing, switching scope, or toggling pwd mode leaves context mode and resumes fuzzy filtering.
+- Interactive context is anchored by immutable entry index. Public ID-based
+  context lookup returns no result when duplicate IDs make the request
+  ambiguous.
 
 ## Rust API
 
@@ -291,8 +316,8 @@ The public API is intentionally small so tests can exercise behavior without sta
 
 GitHub Actions runs CI on pushes and pull requests. Pushing a tag matching `v*` creates a GitHub Release and uploads packaged binaries:
 
-    git tag v0.2.1
-    git push origin v0.2.1
+    git tag v0.2.2
+    git push origin v0.2.2
 
 Release assets currently include:
 

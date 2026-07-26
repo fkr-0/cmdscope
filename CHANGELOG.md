@@ -7,6 +7,48 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html/)
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-07-26
+
+### Added
+
+- Added compatibility loading for older Atuin-style databases that predate the
+  optional `deleted_at` soft-delete column.
+- Added explicit schema diagnostics for missing tables, missing required
+  columns, and incompatible SQLite row values.
+- Added boundary coverage for duplicate IDs, equal timestamps, multiline CLI
+  output, tiny terminal dimensions, Unicode paths and shortcuts, and bidi
+  display controls.
+
+### Changed
+
+- Preserved active fuzzy queries when callers switch a `SearchEngine` scope.
+- Anchored interactive context review by immutable history index rather than
+  externally supplied history ID.
+- Ordered equal-timestamp history rows deterministically by ID.
+- Added a one-second SQLite busy timeout to tolerate short concurrent writer
+  transactions.
+- Made selected-command stdout writes fallible instead of using panic-prone
+  print macros.
+
+### Fixed
+
+- Prevented duplicate history IDs from moving context review to a different
+  command; ID-based public context lookup now fails closed when an ID is
+  ambiguous.
+- Prevented unsupported Super, Hyper, and Meta event modifiers from being
+  silently stripped and triggering unrelated plain-key bindings.
+- Fixed modified non-ASCII shortcuts such as `ctrl-ä` and `shift-ö`.
+- Fixed case-insensitive matching for non-ASCII Windows path components.
+- Sanitized bidi and zero-width format controls in commands, paths, and the
+  typed query before terminal rendering.
+- Preserved real scan statistics after scope changes instead of overwriting
+  them with a false cache-hit report.
+
+### Performance
+
+- The final 100,000-row benchmark completed the ten-query sequence in 355 ms
+  with incremental filtering versus 563 ms with full rescans (1.59× faster).
+
 ## [0.2.1] - 2026-07-26
 
 ### Added

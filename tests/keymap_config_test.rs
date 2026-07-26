@@ -30,6 +30,48 @@ fn toml_can_remap_navigation_and_acceptance() {
 }
 
 #[test]
+fn modified_unicode_character_bindings_are_normalized_consistently() {
+    let config = AppConfig::from_toml(
+        r#"
+        [keys]
+        global = "ctrl-Ä"
+        pwd = "shift-ö"
+        "#,
+    )
+    .unwrap();
+    let keymap = config.compile_keymap().unwrap();
+
+    assert_eq!(
+        keymap.action_for(KeyEvent::new(KeyCode::Char('Ä'), KeyModifiers::CONTROL)),
+        Some(KeyAction::ShowGlobal)
+    );
+    assert_eq!(
+        keymap.action_for(KeyEvent::new(KeyCode::Char('Ö'), KeyModifiers::SHIFT)),
+        Some(KeyAction::ShowPwd)
+    );
+}
+
+#[test]
+fn unsupported_super_hyper_and_meta_modifiers_do_not_trigger_plain_bindings() {
+    let config = AppConfig::from_toml(
+        r#"
+        [keys]
+        global = "g"
+        "#,
+    )
+    .unwrap();
+    let keymap = config.compile_keymap().unwrap();
+
+    for modifier in [KeyModifiers::SUPER, KeyModifiers::HYPER, KeyModifiers::META] {
+        assert_eq!(
+            keymap.action_for(KeyEvent::new(KeyCode::Char('g'), modifier)),
+            None,
+            "modifier={modifier:?}"
+        );
+    }
+}
+
+#[test]
 fn backtab_is_always_treated_as_shift_tab() {
     let config = AppConfig::from_toml(
         r#"

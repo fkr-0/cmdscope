@@ -20,6 +20,56 @@ fn model() -> AppModel {
 }
 
 #[test]
+fn query_bidi_controls_are_rendered_visibly() {
+    let mut model = model();
+    for character in "git\u{202e}status".chars() {
+        model.update(Msg::Input(character));
+    }
+
+    let text = rendered_text(&model, &AppConfig::default());
+
+    assert!(text.contains("query git�status"), "{text}");
+    assert!(!text.contains('\u{202e}'), "{text}");
+}
+
+#[test]
+fn bidi_and_zero_width_controls_are_rendered_visibly() {
+    let model = AppModel::new(
+        HistoryStore::from_entries(vec![HistoryEntry::new(
+            "1",
+            1_700_000_000,
+            0,
+            "safe\u{202e}txt\u{2066}end\u{200b}",
+            "/repo\u{200f}path",
+            "s",
+            "h",
+        )]),
+        Some("/repo".to_string()),
+    );
+
+    let text = rendered_text(&model, &AppConfig::default());
+
+    assert!(text.contains("safe�txt�end�"), "{text}");
+    assert!(text.contains("/repo�path"), "{text}");
+    assert!(!text.contains('\u{202e}'), "{text}");
+    assert!(!text.contains('\u{2066}'), "{text}");
+}
+
+#[test]
+fn rendering_is_safe_for_tiny_terminal_areas() {
+    let model = model();
+    let config = AppConfig::default();
+
+    for width in 0..=16 {
+        for height in 0..=16 {
+            let area = Rect::new(0, 0, width, height);
+            let mut buffer = Buffer::empty(area);
+            tui::render(&model, &config, area, &mut buffer);
+        }
+    }
+}
+
+#[test]
 fn footer_shows_all_configurable_action_groups() {
     let config = AppConfig::from_toml(
         r#"

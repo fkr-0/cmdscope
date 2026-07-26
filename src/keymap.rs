@@ -71,6 +71,12 @@ pub struct KeyChord {
 
 impl KeyChord {
     pub fn from_event(event: KeyEvent) -> Option<Self> {
+        if event
+            .modifiers
+            .intersects(KeyModifiers::SUPER | KeyModifiers::HYPER | KeyModifiers::META)
+        {
+            return None;
+        }
         let mut modifiers = supported_modifiers(event.modifiers);
         let code = match event.code {
             KeyCode::Char(character) => {
@@ -155,7 +161,7 @@ impl FromStr for KeyChord {
                 if character.is_control() {
                     bail!("control characters must use a named key in chord {input:?}");
                 }
-                ChordCode::Char(character)
+                ChordCode::Char(normalize_modified_char(character, modifiers))
             }
         };
 
@@ -250,7 +256,7 @@ impl KeyMap {
 
 fn normalize_modified_char(character: char, modifiers: KeyModifiers) -> char {
     if modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SHIFT) {
-        character.to_ascii_lowercase()
+        character.to_lowercase().next().unwrap_or(character)
     } else {
         character
     }
