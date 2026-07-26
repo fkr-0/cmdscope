@@ -8,7 +8,7 @@ use crossterm::{
 use ratatui::{Terminal, backend::CrosstermBackend};
 use std::io;
 
-type TuiTerminal = Terminal<CrosstermBackend<io::Stdout>>;
+type TuiTerminal = Terminal<CrosstermBackend<io::Stderr>>;
 
 struct TerminalSession {
     terminal: TuiTerminal,
@@ -18,16 +18,16 @@ struct TerminalSession {
 impl TerminalSession {
     fn enter() -> Result<Self> {
         enable_raw_mode()?;
-        let mut stdout = io::stdout();
-        if let Err(error) = execute!(stdout, EnterAlternateScreen) {
+        let mut stderr = io::stderr();
+        if let Err(error) = execute!(stderr, EnterAlternateScreen) {
             let _ = disable_raw_mode();
             return Err(error.into());
         }
-        let terminal = match Terminal::new(CrosstermBackend::new(stdout)) {
+        let terminal = match Terminal::new(CrosstermBackend::new(stderr)) {
             Ok(terminal) => terminal,
             Err(error) => {
-                let mut stdout = io::stdout();
-                let _ = execute!(stdout, LeaveAlternateScreen);
+                let mut stderr = io::stderr();
+                let _ = execute!(stderr, LeaveAlternateScreen);
                 let _ = disable_raw_mode();
                 return Err(error.into());
             }

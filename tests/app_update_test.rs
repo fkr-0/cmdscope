@@ -12,6 +12,54 @@ fn model() -> AppModel {
 }
 
 #[test]
+fn leaving_context_restores_the_anchor_selection() {
+    let mut model = AppModel::new(
+        HistoryStore::from_entries(vec![
+            HistoryEntry::new("1", 100, 0, "alpha match", "/repo", "s", "h"),
+            HistoryEntry::new("2", 110, 0, "neighbor", "/repo", "s", "h"),
+            HistoryEntry::new("3", 120, 0, "beta match", "/repo", "s", "h"),
+        ]),
+        Some("/repo".to_string()),
+    );
+    for character in "match".chars() {
+        model.update(Msg::Input(character));
+    }
+    model.update(Msg::SelectNext);
+    assert_eq!(model.selected().map(|entry| entry.id.as_str()), Some("1"));
+
+    model.update(Msg::ToggleContext);
+    assert_eq!(model.selected().map(|entry| entry.id.as_str()), Some("1"));
+    model.update(Msg::ToggleContext);
+
+    assert_eq!(model.selected().map(|entry| entry.id.as_str()), Some("1"));
+}
+
+#[test]
+fn unavailable_pwd_and_git_scopes_do_not_leak_global_results() {
+    let mut model = AppModel::new_with_environment(
+        HistoryStore::from_entries(vec![HistoryEntry::new(
+            "1",
+            100,
+            0,
+            "secret command",
+            "/repo",
+            "s",
+            "h",
+        )]),
+        None,
+        None,
+        cmdscope::PwdMatchMode::Exact,
+    );
+
+    model.update(Msg::ShowPwd);
+    assert_eq!(model.visible_len(), 0);
+    model.update(Msg::ShowGitRoot);
+    assert_eq!(model.visible_len(), 0);
+    model.update(Msg::ShowGlobal);
+    assert_eq!(model.visible_commands(), vec!["secret command"]);
+}
+
+#[test]
 fn typing_leaves_context_and_resumes_incremental_search() {
     let mut model = model();
     model.update(Msg::Input('l'));

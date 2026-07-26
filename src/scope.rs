@@ -84,34 +84,67 @@ impl SearchScope {
                 pwd: Some(pwd),
                 mode,
             } => path_matches(pwd, cwd, *mode),
-            Self::Pwd { pwd: None, .. } => true,
+            Self::Pwd { pwd: None, .. } => false,
             Self::GitRoot { root: Some(root) } => {
                 path_matches(root, cwd, PwdMatchMode::IncludeSubdirs)
             }
-            Self::GitRoot { root: None } => true,
+            Self::GitRoot { root: None } => false,
         }
     }
 }
 
 pub(crate) fn normalized_path_key(path: &str) -> String {
-    trim_trailing_slashes(path).to_string()
+    let bytes = path.as_bytes();
+    let drive_path = bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':';
+    let unc_path = path.starts_with("\\\\") || (path.starts_with("//") && !path.starts_with("///"));
+    let windows_like = drive_path || unc_path;
+    let replaced = if windows_like {
+        path.replace('\\', "/")
+    } else {
+        path.to_string()
+    };
+    let prefix = if unc_path {
+        "//"
+    } else if replaced.starts_with('/') {
+        "/"
+    } else {
+        ""
+    };
+
+    let mut normalized = String::with_capacity(replaced.len());
+    normalized.push_str(prefix);
+    for component in replaced
+        .split('/')
+        .filter(|component| !component.is_empty())
+    {
+        if !normalized.is_empty() && !normalized.ends_with('/') {
+            normalized.push('/');
+        }
+        normalized.push_str(component);
+    }
+    if windows_like {
+        normalized.make_ascii_lowercase();
+    }
+    normalized
 }
 
 fn path_matches(root: &str, candidate: &str, mode: PwdMatchMode) -> bool {
-    let root = trim_trailing_slashes(root);
-    let candidate = trim_trailing_slashes(candidate);
     match mode {
         PwdMatchMode::Exact => candidate == root,
         PwdMatchMode::IncludeSubdirs => {
-            candidate == root
-                || candidate
+            if candidate == root {
+                true
+            } else if root.is_empty() {
+                false
+            } else if root == "/" {
+                candidate.starts_with('/')
+            } else if root == "//" {
+                candidate.starts_with("//")
+            } else {
+                candidate
                     .strip_prefix(root)
                     .is_some_and(|rest| rest.starts_with('/'))
+            }
         }
     }
-}
-
-fn trim_trailing_slashes(path: &str) -> &str {
-    let trimmed = path.trim_end_matches('/');
-    if trimmed.is_empty() { "/" } else { trimmed }
 }

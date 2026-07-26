@@ -12,6 +12,75 @@ fn store() -> HistoryStore {
 }
 
 #[test]
+fn unix_backslashes_remain_literal_and_case_sensitive() {
+    let store = HistoryStore::from_entries(vec![
+        HistoryEntry::new("1", 100, 0, "literal", r"/tmp/Foo\Bar", "s", "h"),
+        HistoryEntry::new("2", 110, 0, "different", r"/tmp/foo/bar", "s", "h"),
+    ]);
+    let scope = SearchScope::pwd(Some(r"/tmp/Foo\Bar"), PwdMatchMode::Exact);
+
+    let commands = store
+        .search_with_scope("", &scope, 10)
+        .into_iter()
+        .map(|entry| entry.command)
+        .collect::<Vec<_>>();
+
+    assert_eq!(commands, vec!["literal"]);
+}
+
+#[test]
+fn filesystem_root_scope_includes_descendants() {
+    let store = HistoryStore::from_entries(vec![
+        HistoryEntry::new("1", 100, 0, "root", "/", "s", "h"),
+        HistoryEntry::new("2", 110, 0, "nested", "/var/tmp", "s", "h"),
+    ]);
+    let scope = SearchScope::pwd(Some("/"), PwdMatchMode::IncludeSubdirs);
+
+    let commands = store
+        .search_with_scope("", &scope, 10)
+        .into_iter()
+        .map(|entry| entry.command)
+        .collect::<Vec<_>>();
+
+    assert_eq!(commands, vec!["nested", "root"]);
+}
+
+#[test]
+fn windows_paths_match_across_separator_and_case_variants() {
+    let store = HistoryStore::from_entries(vec![
+        HistoryEntry::new("1", 100, 0, "root", r"C:\\Repo", "s", "h"),
+        HistoryEntry::new("2", 110, 0, "nested", r"c:\\repo\\src", "s", "h"),
+        HistoryEntry::new("3", 120, 0, "prefix", r"C:\\Repository", "s", "h"),
+    ]);
+    let scope = SearchScope::pwd(Some("C:/REPO/"), PwdMatchMode::IncludeSubdirs);
+
+    let commands = store
+        .search_with_scope("", &scope, 10)
+        .into_iter()
+        .map(|entry| entry.command)
+        .collect::<Vec<_>>();
+
+    assert_eq!(commands, vec!["nested", "root"]);
+}
+
+#[test]
+fn empty_recorded_pwd_is_not_treated_as_filesystem_root() {
+    let store = HistoryStore::from_entries(vec![
+        HistoryEntry::new("1", 100, 0, "empty", "", "s", "h"),
+        HistoryEntry::new("2", 110, 0, "root", "/", "s", "h"),
+    ]);
+    let scope = SearchScope::pwd(Some("/"), PwdMatchMode::Exact);
+
+    let commands = store
+        .search_with_scope("", &scope, 10)
+        .into_iter()
+        .map(|entry| entry.command)
+        .collect::<Vec<_>>();
+
+    assert_eq!(commands, vec!["root"]);
+}
+
+#[test]
 fn pwd_scope_can_match_exact_current_directory_only() {
     let scope = SearchScope::pwd(Some("/repo"), PwdMatchMode::Exact);
 

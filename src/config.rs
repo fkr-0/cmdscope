@@ -1,7 +1,7 @@
 use crate::keymap::KeyMap;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Deserializer};
-use std::path::Path;
+use std::{io::ErrorKind, path::Path};
 
 fn one_or_many<'de, D>(deserializer: D) -> std::result::Result<Vec<String>, D::Error>
 where
@@ -32,6 +32,7 @@ fn bindings(values: &[&str]) -> Vec<String> {
 ///
 /// Each field accepts either one string or a list of strings.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct KeyConfig {
     #[serde(default = "default_key_global", deserialize_with = "one_or_many")]
     pub global: Vec<String>,
@@ -107,6 +108,7 @@ impl KeyConfig {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct PwdConfig {
     #[serde(default)]
     pub mode: crate::PwdMatchMode,
@@ -125,6 +127,7 @@ fn default_history_columns() -> Vec<HistoryColumn> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct UiConfig {
     #[serde(default = "default_history_columns")]
     pub history_columns: Vec<HistoryColumn>,
@@ -140,6 +143,7 @@ impl Default for UiConfig {
 
 /// Top-level TOML configuration.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct AppConfig {
     #[serde(default)]
     pub keys: KeyConfig,
@@ -156,9 +160,17 @@ impl AppConfig {
 
     pub fn load_optional(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref();
-        if !path.exists() {
-            return Ok(Self::default());
+        match std::fs::symlink_metadata(path) {
+            Ok(_) => Self::load_required(path),
+            Err(error) if error.kind() == ErrorKind::NotFound => Ok(Self::default()),
+            Err(error) => {
+                Err(error).with_context(|| format!("failed to inspect config {}", path.display()))
+            }
         }
+    }
+
+    pub fn load_required(path: impl AsRef<Path>) -> Result<Self> {
+        let path = path.as_ref();
         let input = std::fs::read_to_string(path)
             .with_context(|| format!("failed to read config {}", path.display()))?;
         Self::from_toml(&input)

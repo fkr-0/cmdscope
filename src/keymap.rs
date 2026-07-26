@@ -71,13 +71,18 @@ pub struct KeyChord {
 
 impl KeyChord {
     pub fn from_event(event: KeyEvent) -> Option<Self> {
+        let mut modifiers = supported_modifiers(event.modifiers);
         let code = match event.code {
             KeyCode::Char(character) => {
                 ChordCode::Char(normalize_modified_char(character, event.modifiers))
             }
             KeyCode::Enter => ChordCode::Enter,
             KeyCode::Esc => ChordCode::Esc,
-            KeyCode::Tab | KeyCode::BackTab => ChordCode::Tab,
+            KeyCode::Tab => ChordCode::Tab,
+            KeyCode::BackTab => {
+                modifiers.insert(KeyModifiers::SHIFT);
+                ChordCode::Tab
+            }
             KeyCode::Backspace => ChordCode::Backspace,
             KeyCode::Up => ChordCode::Up,
             KeyCode::Down => ChordCode::Down,
@@ -91,10 +96,7 @@ impl KeyChord {
             KeyCode::Insert => ChordCode::Insert,
             _ => return None,
         };
-        Some(Self {
-            code,
-            modifiers: supported_modifiers(event.modifiers),
-        })
+        Some(Self { code, modifiers })
     }
 }
 
@@ -149,6 +151,9 @@ impl FromStr for KeyChord {
                     .ok_or_else(|| anyhow::anyhow!("missing key in chord {input:?}"))?;
                 if characters.next().is_some() {
                     bail!("unknown key {value:?} in key chord {input:?}");
+                }
+                if character.is_control() {
+                    bail!("control characters must use a named key in chord {input:?}");
                 }
                 ChordCode::Char(character)
             }

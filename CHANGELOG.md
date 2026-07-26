@@ -7,6 +7,52 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html/)
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-07-26
+
+### Added
+
+- Added a standard `--version` CLI flag.
+- Added differential search-correctness tests, command-substitution PTY
+  coverage, and boundary tests for empty stores, unlimited result counts, and
+  maximum context radii.
+
+### Changed
+
+- Rendered the interactive terminal UI on stderr so stdout contains only the
+  selected command and remains safe for shell command substitution.
+- Bounded cached query-prefix layers to prevent memory growth during unusually
+  long search queries.
+- Split the shortcut footer into complete action groups so configurable scope,
+  editing, context, navigation, and completion bindings remain visible.
+- Made explicitly requested config files required while keeping the default
+  config path optional.
+- Added repository and readme metadata to the Cargo package manifest.
+
+### Fixed
+
+- Fixed subtree matching at the Unix filesystem root.
+- Fixed Windows path matching across drive-letter case and slash styles while
+  preserving literal backslashes and case sensitivity in Unix paths.
+- Prevented unavailable pwd and Git-root scopes from silently exposing broader
+  history results.
+- Restored the original selected command when leaving chronological context
+  review.
+- Sanitized command and working-directory control characters before rendering
+  them into single-line terminal rows.
+- Rejected unknown TOML fields and unreachable raw control-character bindings.
+- Treated `BackTab` consistently as `shift-tab`, even when the terminal omits
+  the explicit Shift modifier.
+- Fixed timestamp magnitude detection for valid future Unix-second values.
+- Prevented integer overflow in maximum-radius context windows and maximum
+  search-result limits.
+- Avoided an invalid list selection when a query has no matches.
+
+### Performance
+
+- The 100,000-row release benchmark retained the incremental filtering gain:
+  670 ms for full rescans versus 413 ms for the bounded incremental engine
+  (1.62× faster for the ten-query sequence).
+
 ## [0.2.0] - 2026-07-26
 
 ### Added

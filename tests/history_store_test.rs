@@ -12,6 +12,28 @@ fn seed_store() -> HistoryStore {
 }
 
 #[test]
+fn unavailable_scopes_return_no_history() {
+    let store = seed_store();
+
+    assert!(store.search("", SearchMode::SamePwd, None, 10).is_empty());
+    assert!(
+        store
+            .search_with_scope("", &cmdscope::SearchScope::git_root(None), 10)
+            .is_empty()
+    );
+}
+
+#[test]
+fn maximum_context_radius_cannot_overflow() {
+    let store = seed_store();
+    let context = store
+        .context_around("3", usize::MAX, SearchMode::All, None)
+        .unwrap();
+
+    assert_eq!(context.len(), store.len());
+}
+
+#[test]
 fn searches_commands_newest_first_with_skim_fuzzy_matching() {
     let store = seed_store();
 

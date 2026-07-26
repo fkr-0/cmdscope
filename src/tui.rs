@@ -18,13 +18,31 @@ pub fn render(model: &AppModel, config: &AppConfig, area: Rect, buf: &mut Buffer
         .constraints([
             Constraint::Length(4),
             Constraint::Min(4),
-            Constraint::Length(4),
+            Constraint::Length(6),
         ])
         .split(area);
 
     render_header(model, chunks[0], buf);
     render_history(model, config, chunks[1], buf);
     render_shortcuts(config, chunks[2], buf);
+}
+
+fn display_text(input: &str) -> Cow<'_, str> {
+    if input.chars().all(|character| !character.is_control()) {
+        return Cow::Borrowed(input);
+    }
+
+    let mut output = String::with_capacity(input.len());
+    for character in input.chars() {
+        match character {
+            '\n' => output.push('⏎'),
+            '\r' => output.push('␍'),
+            '\t' => output.push('⇥'),
+            character if character.is_control() => output.push('�'),
+            character => output.push(character),
+        }
+    }
+    Cow::Owned(output)
 }
 
 fn render_header(model: &AppModel, area: Rect, buf: &mut Buffer) {
@@ -47,13 +65,13 @@ fn render_history(model: &AppModel, config: &AppConfig, area: Rect, buf: &mut Bu
         .block(Block::default().borders(Borders::ALL).title(title))
         .highlight_symbol("▶ ")
         .highlight_style(Style::default().add_modifier(Modifier::REVERSED));
-    let mut state =
-        ratatui::widgets::ListState::default().with_selected(Some(model.selected_index()));
+    let selected = (model.visible_len() > 0).then_some(model.selected_index());
+    let mut state = ratatui::widgets::ListState::default().with_selected(selected);
     StatefulWidget::render(list, area, buf, &mut state);
 }
 
 fn render_shortcuts(config: &AppConfig, area: Rect, buf: &mut Buffer) {
-    Paragraph::new(help_line(config))
+    Paragraph::new(help_lines(config))
         .block(Block::default().borders(Borders::ALL).title("shortcuts"))
         .render(area, buf);
 }
@@ -80,27 +98,39 @@ fn header_lines<'a>(model: &'a AppModel) -> Vec<Line<'a>> {
     ]
 }
 
-fn help_line(config: &AppConfig) -> String {
+fn help_lines(config: &AppConfig) -> Vec<Line<'static>> {
     let selection = format!(
         "{}/{}",
         KeyConfig::display(&config.keys.select_previous),
         KeyConfig::display(&config.keys.select_next)
     );
-    format!(
-        "{} global · {} pwd · {} git-root · {} pwd-mode · {} metadata · \
-         {} context · {}/{} grow/shrink · {} select · {} accept · {} quit",
-        KeyConfig::display(&config.keys.global),
-        KeyConfig::display(&config.keys.pwd),
-        KeyConfig::display(&config.keys.git_root),
-        KeyConfig::display(&config.keys.toggle_pwd_mode),
-        KeyConfig::display(&config.keys.toggle_metadata),
-        KeyConfig::display(&config.keys.context),
-        KeyConfig::display(&config.keys.context_expand),
-        KeyConfig::display(&config.keys.context_shrink),
-        selection,
-        KeyConfig::display(&config.keys.accept),
-        KeyConfig::display(&config.keys.quit),
-    )
+    vec![
+        Line::from(format!(
+            "scopes: {} global · {} pwd · {} git-root · {} toggle",
+            KeyConfig::display(&config.keys.global),
+            KeyConfig::display(&config.keys.pwd),
+            KeyConfig::display(&config.keys.git_root),
+            KeyConfig::display(&config.keys.toggle_scope),
+        )),
+        Line::from(format!(
+            "pwd/context: {} mode · {} context · {}/{} grow/shrink",
+            KeyConfig::display(&config.keys.toggle_pwd_mode),
+            KeyConfig::display(&config.keys.context),
+            KeyConfig::display(&config.keys.context_expand),
+            KeyConfig::display(&config.keys.context_shrink),
+        )),
+        Line::from(format!(
+            "view/nav: {} metadata · {} select",
+            KeyConfig::display(&config.keys.toggle_metadata),
+            selection,
+        )),
+        Line::from(format!(
+            "finish/edit: {} accept · {} quit · {} backspace",
+            KeyConfig::display(&config.keys.accept),
+            KeyConfig::display(&config.keys.quit),
+            KeyConfig::display(&config.keys.backspace),
+        )),
+    ]
 }
 
 fn history_item<'a>(
@@ -111,14 +141,14 @@ fn history_item<'a>(
     let exit = if entry.exit == 0 { "ok " } else { "fail " };
     let mut spans = vec![
         Span::styled(exit, Style::default().add_modifier(Modifier::BOLD)),
-        Span::raw(entry.command.as_str()),
+        Span::raw(display_text(&entry.command)),
     ];
     if metadata_visible {
         for column in columns {
             spans.push(Span::raw("  "));
             spans.push(match column {
                 HistoryColumn::Date => Span::raw(format_unix_date(entry.timestamp)),
-                HistoryColumn::Pwd => Span::raw(entry.cwd.as_str()),
+                HistoryColumn::Pwd => Span::raw(display_text(&entry.cwd)),
             });
         }
     }
@@ -134,11 +164,11 @@ fn format_unix_date(timestamp: i64) -> String {
 
 fn normalized_timestamp_seconds(timestamp: i64) -> i64 {
     let magnitude = timestamp.unsigned_abs();
-    if magnitude >= 10_000_000_000_000_000 {
+    if magnitude >= 100_000_000_000_000_000 {
         timestamp / 1_000_000_000
-    } else if magnitude >= 10_000_000_000_000 {
+    } else if magnitude >= 100_000_000_000_000 {
         timestamp / 1_000_000
-    } else if magnitude >= 10_000_000_000 {
+    } else if magnitude >= 100_000_000_000 {
         timestamp / 1_000
     } else {
         timestamp

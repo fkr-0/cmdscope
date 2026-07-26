@@ -30,6 +30,44 @@ fn toml_can_remap_navigation_and_acceptance() {
 }
 
 #[test]
+fn backtab_is_always_treated_as_shift_tab() {
+    let config = AppConfig::from_toml(
+        r#"
+        [keys]
+        toggle_scope = "shift-tab"
+        "#,
+    )
+    .unwrap();
+    let keymap = config.compile_keymap().unwrap();
+
+    assert_eq!(
+        keymap.action_for(KeyEvent::new(KeyCode::BackTab, KeyModifiers::NONE)),
+        Some(KeyAction::ToggleScope)
+    );
+    assert_eq!(
+        keymap.action_for(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE)),
+        None
+    );
+}
+
+#[test]
+fn raw_control_character_bindings_are_rejected() {
+    let config = AppConfig::from_toml("[keys]\ncontext = \"\\u001b\"\n").unwrap();
+
+    let error = config.compile_keymap().unwrap_err().to_string();
+    assert!(error.contains("control characters"), "{error}");
+}
+
+#[test]
+fn unknown_config_fields_fail_instead_of_falling_back_to_defaults() {
+    let error = AppConfig::from_toml("[keys]\nselect_nxt = \"down\"\n").unwrap_err();
+    let error = format!("{error:#}");
+
+    assert!(error.contains("unknown field"), "{error}");
+    assert!(error.contains("select_nxt"), "{error}");
+}
+
+#[test]
 fn hyphenated_page_key_aliases_are_reachable() {
     let config = AppConfig::from_toml(
         r#"

@@ -1,23 +1,74 @@
 version: 1
 project: cmdscope
 reviewed_at: 2026-07-26
-release_candidate: 0.2.0
+release_candidate: 0.2.1
 
 open: []
 
 verification:
   formatting: cargo fmt --all -- --check
   lint: cargo clippy --all-targets -- -D warnings
-  tests: 27 passed
+  tests: 49 passed
   docs: cargo doc --no-deps
   real_db_smoke: passed against ./history.db
   benchmark:
     rows: 100000
-    legacy_total_us: 547493
-    incremental_total_us: 341057
-    sequence_speedup: 1.61
+    legacy_total_us: 669509
+    incremental_total_us: 413378
+    sequence_speedup: 1.62
 
 completed:
+  - id: BUG-001
+    title: Keep terminal control output out of shell command substitution
+    status: done
+    evidence:
+      - src/terminal.rs
+      - PTY stdout-isolation smoke
+  - id: BUG-002
+    title: Correct root, Windows, and unavailable-scope path semantics
+    status: done
+    evidence:
+      - src/scope.rs
+      - src/history.rs
+      - tests/scope_config_test.rs
+  - id: BUG-003
+    title: Preserve selection across context review
+    status: done
+    evidence:
+      - src/app.rs
+      - tests/app_update_test.rs
+  - id: BUG-004
+    title: Sanitize control characters in terminal rows
+    status: done
+    evidence:
+      - src/tui.rs
+      - tests/tui_render_test.rs
+  - id: RELEASE-001
+    title: Complete Cargo package metadata
+    status: done
+    evidence:
+      - Cargo.toml
+      - cargo package --allow-dirty --list --locked
+  - id: BUG-005
+    title: Fail fast on config typos and missing explicit files
+    status: done
+    evidence:
+      - src/config.rs
+      - src/main.rs
+      - tests/keymap_config_test.rs
+      - tests/cli_test.rs
+  - id: BUG-006
+    title: Harden key events, timestamps, empty results, and arithmetic boundaries
+    status: done
+    evidence:
+      - src/keymap.rs
+      - src/search.rs
+      - src/history.rs
+      - src/tui.rs
+      - tests/keymap_config_test.rs
+      - tests/search_correctness_test.rs
+      - tests/history_store_test.rs
+      - tests/tui_render_test.rs
   - id: PERF-001
     title: Replace full-rescan/full-sort filtering hot path
     status: done

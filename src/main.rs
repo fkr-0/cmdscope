@@ -6,7 +6,7 @@ use std::{env, path::PathBuf, process::Command};
 mod terminal;
 
 #[derive(Debug, Parser)]
-#[command(name = "cmdscope", about = "Interactive Atuin history picker")]
+#[command(name = "cmdscope", version, about = "Interactive Atuin history picker")]
 struct Args {
     #[arg(long, env = "CMDSCOPE_DB", default_value = "history.db")]
     db: PathBuf,
@@ -20,8 +20,10 @@ struct Args {
 
 fn main() -> Result<()> {
     let args = Args::parse();
-    let config_path = args.config.unwrap_or_else(default_config_path);
-    let config = AppConfig::load_optional(config_path)?;
+    let config = match args.config {
+        Some(path) => AppConfig::load_required(path)?,
+        None => AppConfig::load_optional(default_config_path())?,
+    };
     let keymap = config.compile_keymap()?;
     let store = HistoryStore::load_sqlite(&args.db)?;
     if args.print_first {

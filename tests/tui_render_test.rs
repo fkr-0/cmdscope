@@ -19,8 +19,107 @@ fn model() -> AppModel {
     )
 }
 
+#[test]
+fn footer_shows_all_configurable_action_groups() {
+    let config = AppConfig::from_toml(
+        r#"
+        [keys]
+        toggle_scope = "ctrl-t"
+        backspace = "delete"
+        "#,
+    )
+    .unwrap();
+
+    let text = rendered_text(&model(), &config);
+
+    assert!(text.contains("ctrl-t toggle"), "{text}");
+    assert!(text.contains("delete backspace"), "{text}");
+    assert!(text.contains("finish/edit:"), "{text}");
+}
+
+#[test]
+fn empty_results_render_without_an_invalid_selection() {
+    let mut model = model();
+    for character in "no-such-command".chars() {
+        model.update(Msg::Input(character));
+    }
+
+    let text = rendered_text(&model, &AppConfig::default());
+
+    assert!(text.contains("matches (0)"), "{text}");
+    assert!(!text.contains('▶'), "{text}");
+}
+
+#[test]
+fn future_second_timestamps_are_not_misclassified_as_milliseconds() {
+    let model = AppModel::new(
+        HistoryStore::from_entries(vec![HistoryEntry::new(
+            "1",
+            10_413_792_000,
+            0,
+            "future",
+            "/repo",
+            "s",
+            "h",
+        )]),
+        Some("/repo".to_string()),
+    );
+
+    let text = rendered_text(&model, &AppConfig::default());
+
+    assert!(text.contains("2300-01-01"), "{text}");
+}
+
+#[test]
+fn common_timestamp_precisions_render_the_same_date() {
+    for timestamp in [
+        1_700_000_000_i64,
+        1_700_000_000_000,
+        1_700_000_000_000_000,
+        1_700_000_000_000_000_000,
+    ] {
+        let model = AppModel::new(
+            HistoryStore::from_entries(vec![HistoryEntry::new(
+                timestamp.to_string(),
+                timestamp,
+                0,
+                "timestamp",
+                "/repo",
+                "s",
+                "h",
+            )]),
+            Some("/repo".to_string()),
+        );
+        let text = rendered_text(&model, &AppConfig::default());
+        assert!(text.contains("2023-11-14"), "timestamp={timestamp}\n{text}");
+    }
+}
+
+#[test]
+fn control_characters_are_rendered_as_safe_single_line_symbols() {
+    let model = AppModel::new(
+        HistoryStore::from_entries(vec![HistoryEntry::new(
+            "1",
+            1_700_000_000,
+            0,
+            "printf one\ntwo\rthree\tfour\u{1b}[31m",
+            "/repo\nunsafe",
+            "s",
+            "h",
+        )]),
+        Some("/repo".to_string()),
+    );
+
+    let text = rendered_text(&model, &AppConfig::default());
+
+    assert!(text.contains("one⏎two␍three⇥four�[31m"), "{text}");
+    assert!(text.contains("/repo⏎unsafe"), "{text}");
+    assert!(!text.contains('\u{1b}'), "{text}");
+    assert!(!text.contains('\t'), "{text}");
+}
+
 fn rendered_text(model: &AppModel, config: &AppConfig) -> String {
-    let area = Rect::new(0, 0, 100, 12);
+    let area = Rect::new(0, 0, 100, 14);
     let mut buffer = Buffer::empty(area);
     tui::render(model, config, area, &mut buffer);
 

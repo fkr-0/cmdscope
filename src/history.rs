@@ -187,9 +187,8 @@ impl HistoryStore {
 
     pub(crate) fn indices_for_scope(&self, scope: &SearchScope) -> Vec<usize> {
         match scope {
-            SearchScope::Global
-            | SearchScope::Pwd { pwd: None, .. }
-            | SearchScope::GitRoot { root: None } => (0..self.entries.len()).collect(),
+            SearchScope::Global => (0..self.entries.len()).collect(),
+            SearchScope::Pwd { pwd: None, .. } | SearchScope::GitRoot { root: None } => Vec::new(),
             SearchScope::Pwd {
                 pwd: Some(pwd),
                 mode: crate::PwdMatchMode::Exact,
@@ -221,7 +220,10 @@ impl HistoryStore {
         let scoped = self.indices_for_scope(scope);
         let position = scoped.binary_search(&selected_index).ok()?;
         let start = position.saturating_sub(radius);
-        let end = (position + radius + 1).min(scoped.len());
+        let end = position
+            .saturating_add(radius)
+            .saturating_add(1)
+            .min(scoped.len());
         Some(scoped[start..end].to_vec())
     }
 }

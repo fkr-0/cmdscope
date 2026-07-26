@@ -3,11 +3,11 @@ release:
   unit: repository
   project: cmdscope
   date: 2026-07-26
-  base_revision: 2b4689655aa3cb8f5737dc0e2c0e8906723e4031
+  base_revision: c0b9cad06a6ca29a1fff43edc8a859cffe2bb272
   release_revision: HEAD
-  version_before: 0.1.0
-  version_after: 0.2.0
-  proposed_tag: v0.2.0
+  version_before: 0.2.0
+  version_after: 0.2.1
+  proposed_tag: v0.2.1
   tag_created: false
   push_state: not_requested
   publish_state: not_requested
@@ -18,61 +18,121 @@ metadata:
     - Cargo.lock
     - CHANGELOG.md
     - README.md
-    - examples.config.toml
-    - .github/workflows/ci-release.yml
+    - release-evidence.yml
+    - src/app.rs
+    - src/config.rs
+    - src/history.rs
+    - src/keymap.rs
+    - src/main.rs
+    - src/scope.rs
+    - src/search.rs
+    - src/terminal.rs
+    - src/tui.rs
+    - tasks.yml
+    - tests/app_update_test.rs
+    - tests/cli_test.rs
+    - tests/history_store_test.rs
+    - tests/keymap_config_test.rs
+    - tests/scope_config_test.rs
+    - tests/search_correctness_test.rs
+    - tests/tui_render_test.rs
   version_agreement:
-    cargo_metadata: 0.2.0
-    cargo_lock: 0.2.0
+    cargo_metadata: 0.2.1
+    cargo_lock: 0.2.1
+    cli_version: cmdscope 0.2.1
 
 verification:
   - name: formatting
     command: cargo fmt --all -- --check
     exit_code: 0
-    duration_ms: 64
+    duration_ms: 185
   - name: strict_clippy
     command: cargo clippy --all-targets --locked -- -D warnings
     exit_code: 0
-    duration_ms: 636
-  - name: tests
+    duration_ms: 1271
+  - name: debug_tests
     command: cargo test --all-targets --locked
     exit_code: 0
-    duration_ms: 1702
-    result: 27 passed; 0 failed
+    duration_ms: 969
+    result: 49 passed; 0 failed
+  - name: release_tests
+    command: cargo test --release --all-targets --locked
+    exit_code: 0
+    duration_ms: 495
+    result: 49 passed; 0 failed
+  - name: documentation_tests
+    command: cargo test --doc --locked
+    exit_code: 0
+    duration_ms: 371
+    result: 0 passed; 0 failed
   - name: documentation
     command: cargo doc --no-deps --locked
     exit_code: 0
-    duration_ms: 992
+    duration_ms: 1147
   - name: release_build
     command: cargo build --release --locked
     exit_code: 0
-    duration_ms: 2076
+    duration_ms: 311
+  - name: cli_version
+    command: target/release/cmdscope --version
+    exit_code: 0
+    duration_ms: 4
+    result: cmdscope 0.2.1
   - name: real_database_smoke
     command: target/release/cmdscope --config ./examples.config.toml --db ./history.db --print-first
     exit_code: 0
-    duration_ms: 237
-  - name: interactive_pty_smoke
+    duration_ms: 190
+  - name: interactive_accept_pty_smoke
     command: target/release/cmdscope --config ./examples.config.toml --db ./history.db
     exit_code: 0
-    result: selected command printed; alternate screen closed; cursor restored
+    result: accepted command was the only stdout payload; no escape byte reached stdout; alternate screen closed; cursor restored
+  - name: interactive_cancel_pty_smoke
+    command: target/release/cmdscope --config ./examples.config.toml --db ./history.db
+    exit_code: 0
+    result: cancel produced empty stdout; alternate screen closed; cursor restored
+  - name: differential_search_correctness
+    command: cargo test --test search_correctness_test --locked
+    exit_code: 0
+    result: incremental query transitions matched fresh full rescans, including case and Unicode queries
+  - name: cargo_package_manifest
+    command: cargo package --allow-dirty --list --locked
+    exit_code: 0
+    duration_ms: 139
+    result: package metadata complete; no manifest warning
   - name: filtering_benchmark
     command: target/release/examples/filter_bench 100000
     exit_code: 0
-    duration_ms: 925
+    duration_ms: 1108
     rows: 100000
-    legacy_total_us: 547493
-    incremental_total_us: 341057
-    sequence_speedup: 1.61
+    legacy_total_us: 669509
+    incremental_total_us: 413378
+    sequence_speedup: 1.62
     narrowed_scan_rows: 10000
     full_scope_rows: 100000
+  - name: machine_interpreter
+    command: cargo miri test --lib
+    status: omitted
+    reason: the Miri component is unavailable for the installed stable toolchain
+
+quality:
+  automated_score: 94
+  remaining_findings:
+    - generic cyclomatic-complexity warnings in keymap, scope, and TUI modules; strict Clippy reports no warning or error
 
 artifacts:
   - path: target/release/cmdscope
-    size_bytes: 4874792
-    sha256: 688d28834539d592c2f9f5032c085e9813521e0c8895f525d58f2fc1d8e67328
-  - path: target/release-evidence/cmdscope-0.2.0-x86_64-unknown-linux-gnu.tar.gz
-    size_bytes: 2176396
-    sha256: 62341cc27e2b27516225c4608ee8a7b83b46ce7fe369e163f3fcacfb93d5d88b
+    size_bytes: 4903176
+    sha256: a2cdb0bc99ceac4320a86685ccf6c132042dd63a51a904aa2fa89d3d46222064
+  - path: target/release-evidence/cmdscope-0.2.1-x86_64-unknown-linux-gnu.tar.gz
+    size_bytes: 2186994
+    sha256: 5e5f7dc4186028e327c884ca9b5da90b990ec81d445268200e1eec7b36d2013a
+    contents:
+      - cmdscope
+      - README.md
+      - CHANGELOG.md
+      - examples.config.toml
 
 limitations:
   - Cross-platform release archives were not built locally; GitHub Actions owns macOS and Windows packaging.
+  - Miri was unavailable for the installed stable Rust toolchain.
   - No tag, push, GitHub release, upload, or deployment was requested or performed.

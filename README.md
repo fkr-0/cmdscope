@@ -49,6 +49,10 @@ Smoke-test DB loading without entering the TUI:
 
     cargo run -- --db ./history.db --print-first
 
+Print the installed version:
+
+    cmdscope --version
+
 Use an Atuin database directly:
 
     CMDSCOPE_DB="$HOME/.local/share/atuin/history.db" cmdscope
@@ -78,6 +82,10 @@ Example with default metadata enabled:
 `ok` means exit status `0`; `fail` means a non-zero exit status. The selected row has both a `▶` marker and reverse-video styling so it remains visible across terminal themes.
 
 Metadata is visible by default and can be toggled at runtime with `toggle_metadata` (`alt-m` by default). The configured metadata column order is preserved.
+
+Commands and working directories containing tabs, newlines, escape bytes, or
+other control characters are rendered with safe visible symbols so one history
+entry cannot corrupt adjacent TUI rows.
 
 ## Key bindings
 
@@ -118,6 +126,10 @@ Example Bash/Zsh binding shape:
 
 For Bash/readline, wire `cmdscope` as a command substitution in a custom `bind -x` function.
 
+The full-screen UI is written to stderr. Stdout is reserved exclusively for the
+accepted command, so command substitution receives no alternate-screen or
+cursor-control escape sequences.
+
 ## Development
 
 Recommended checks before committing:
@@ -137,6 +149,10 @@ The tests use TDD-friendly pure model/store behavior so the interactive terminal
 2. `CMDSCOPE_CONFIG=<path>`
 3. `$XDG_CONFIG_HOME/cmdscope/config.toml`
 4. built-in defaults if no config file exists
+
+Paths supplied explicitly through `--config` or `CMDSCOPE_CONFIG` are required;
+a missing or unreadable explicit file is an error. Unknown TOML fields are also
+rejected so misspelled action names cannot silently fall back to defaults.
 
 All non-text shortcuts are configurable through TOML:
 
@@ -186,9 +202,10 @@ The interactive search engine retains `skim`'s fzf-style dynamic-programming sco
 1. Scope changes build a reusable vector of history indices.
 2. Extending a query scans only matches from the previous query layer.
 3. Backspace restores an already-ranked prefix layer without rescanning.
-4. A bounded heap keeps only the best 200 results instead of fully sorting every match.
-5. The model and renderer borrow immutable history rows by index instead of cloning commands.
-6. The event loop blocks while idle and redraws only after input or resize events.
+4. Prefix caching is bounded to 32 layers so long queries cannot grow memory without limit.
+5. A bounded heap keeps only the best 200 results instead of fully sorting every match.
+6. The model and renderer borrow immutable history rows by index instead of cloning commands.
+7. The event loop blocks while idle and redraws only after input or resize events.
 
 Run the reproducible comparison benchmark with:
 
@@ -200,8 +217,8 @@ Reference run on July 26, 2026 with 100,000 rows:
 
 | Strategy | Ten-query sequence | Relative |
 | --- | ---: | ---: |
-| Full rescan + full sort | 547 ms | 1.00× |
-| Incremental + bounded top-K | 341 ms | 1.61× faster |
+| Full rescan + full sort | 670 ms | 1.00× |
+| Incremental + bounded top-K | 413 ms | 1.62× faster |
 
 Once the query had narrowed the candidate set, subsequent characters scanned 10,000 rows rather than 100,000. The first broad characters still necessarily inspect the full active scope, so the improvement grows with query selectivity and history size.
 
@@ -248,6 +265,11 @@ Search modes:
 | pwd:subdirs | commands in the current directory and children |
 | git-root | commands under `git rev-parse --show-toplevel` |
 
+Unavailable pwd or Git-root context produces an empty result set rather than
+silently falling back to global history. Unix root scopes include all absolute
+descendants; Windows drive and UNC paths are matched case-insensitively across
+slash styles.
+
 Context review:
 
 - Enter context with the configured `context` key.
@@ -269,8 +291,8 @@ The public API is intentionally small so tests can exercise behavior without sta
 
 GitHub Actions runs CI on pushes and pull requests. Pushing a tag matching `v*` creates a GitHub Release and uploads packaged binaries:
 
-    git tag v0.2.0
-    git push origin v0.2.0
+    git tag v0.2.1
+    git push origin v0.2.1
 
 Release assets currently include:
 

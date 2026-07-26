@@ -2,11 +2,40 @@ use crate::{HistoryEntry, HistoryStore, SearchScope};
 use skim::{fuzzy_matcher::FuzzyMatcher, prelude::SkimMatcherV2};
 use std::{cmp::Reverse, collections::BinaryHeap};
 
+const MAX_QUERY_LAYERS: usize = 32;
+
 #[derive(Debug, Clone)]
 struct QueryLayer {
     query: String,
     candidates: Vec<usize>,
     ranked: Vec<usize>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::HistoryEntry;
+
+    #[test]
+    fn query_layer_cache_is_bounded() {
+        let store = HistoryStore::from_entries(vec![HistoryEntry::new(
+            "1",
+            1,
+            0,
+            "a".repeat(128),
+            "/repo",
+            "session",
+            "host",
+        )]);
+        let mut engine = SearchEngine::new(store, 10);
+
+        for length in 1..=128 {
+            engine.set_query(&"a".repeat(length));
+        }
+
+        assert_eq!(engine.layers.len(), MAX_QUERY_LAYERS);
+        assert_eq!(engine.query(), "a".repeat(128));
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -61,6 +90,13 @@ impl SearchEngine {
         engine
     }
 
+    fn trim_query_cache(&mut self) {
+        if self.layers.len() > MAX_QUERY_LAYERS {
+            let remove = self.layers.len() - MAX_QUERY_LAYERS;
+            self.layers.drain(1..=remove);
+        }
+    }
+
     pub fn set_scope(&mut self, scope: SearchScope) {
         if self.scope != scope {
             self.scope = scope;
@@ -96,6 +132,7 @@ impl SearchEngine {
         let source = &self.layers.last().expect("base query layer").candidates;
         let (layer, stats) = self.filter_layer(query, source);
         self.layers.push(layer);
+        self.trim_query_cache();
         self.stats = stats;
     }
 
@@ -116,7 +153,10 @@ impl SearchEngine {
         let scoped = &self.layers.first().expect("base query layer").candidates;
         let position = scoped.binary_search(&selected_index).ok()?;
         let start = position.saturating_sub(radius);
-        let end = (position + radius + 1).min(scoped.len());
+        let end = position
+            .saturating_add(radius)
+            .saturating_add(1)
+            .min(scoped.len());
         Some(scoped[start..end].to_vec())
     }
 
@@ -179,7 +219,7 @@ impl SearchEngine {
         }
 
         let mut candidates = Vec::with_capacity(source.len().min(4096));
-        let mut best = BinaryHeap::<Reverse<RankKey>>::with_capacity(self.limit + 1);
+        let mut best = BinaryHeap::<Reverse<RankKey>>::with_capacity(self.limit.min(source.len()));
         for &index in source {
             let entry = self.store.entry(index);
             let Some(score) = self.matcher.fuzzy_match(&entry.command, query) else {

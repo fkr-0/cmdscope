@@ -126,9 +126,15 @@ impl AppModel {
             Msg::ShowPwd => self.switch_mode(SearchMode::SamePwd),
             Msg::ShowGitRoot => self.switch_mode(SearchMode::GitRoot),
             Msg::ToggleContext => {
-                if self.in_context_mode() {
+                if let ViewMode::Context { anchor_id, .. } = &self.view_mode {
+                    let anchor_id = anchor_id.clone();
                     self.leave_context();
                     self.refresh_results();
+                    self.selected_index = self
+                        .visible
+                        .iter()
+                        .position(|&index| self.search.entry(index).id == anchor_id)
+                        .unwrap_or(0);
                 } else if let Some(selected) = self.selected() {
                     self.view_mode = ViewMode::Context {
                         anchor_id: selected.id.clone(),
@@ -139,7 +145,7 @@ impl AppModel {
             }
             Msg::ContextExpand => {
                 if let ViewMode::Context { radius, .. } = &mut self.view_mode {
-                    *radius += 1;
+                    *radius = radius.saturating_add(1);
                     self.refresh_context();
                 }
             }
@@ -179,9 +185,7 @@ impl AppModel {
             SearchMode::SamePwd => {
                 SearchScope::pwd(self.current_pwd.as_deref(), self.pwd_match_mode)
             }
-            SearchMode::GitRoot => {
-                SearchScope::git_root(self.git_root.as_deref().or(self.current_pwd.as_deref()))
-            }
+            SearchMode::GitRoot => SearchScope::git_root(self.git_root.as_deref()),
         }
     }
 
