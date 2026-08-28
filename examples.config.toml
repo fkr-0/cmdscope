@@ -13,6 +13,13 @@ select_previous = ["up", "ctrl-k"]
 accept = "enter"
 quit = ["esc", "ctrl-c"]
 backspace = "backspace"
+delete = ["delete", "ctrl-d"]
+delete_word = "ctrl-w"
+clear_query = "ctrl-u"
+cursor_left = ["left", "ctrl-b"]
+cursor_right = ["right", "ctrl-f"]
+cursor_start = ["home", "ctrl-a"]
+cursor_end = ["end", "ctrl-e"]
 
 [pwd]
 mode = "subdirs"

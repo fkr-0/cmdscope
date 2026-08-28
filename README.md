@@ -9,7 +9,9 @@ It is designed for shell `Ctrl-R` usage: fuzzy-filter commands, optionally restr
 - Fzf-compatible scoring through `skim`, combined with incremental candidate narrowing and prefix caching.
 - Bounded top-K ranking instead of sorting every fuzzy match after each keypress.
 - Allocation-free key dispatch from a startup-validated TOML keymap.
-- `ratatui` + `crossterm` TUI with keyboard-driven interaction.
+- Adaptive `ratatui` + `crossterm` TUI with Atuin-inspired search chrome,
+  relative timing, an inspection tab, responsive information density, and a
+  real cursor-aware query editor.
 - Atuin `history` table support, including `cwd` and `deleted_at` filtering.
 - Same-directory mode for context-sensitive command recall.
 - Context mode that ignores the active filter string and shows commands around the selected result in time order.
@@ -63,23 +65,41 @@ Use a custom config file:
 
 ## TUI layout
 
-The screen has three vertical regions:
+The full layout follows the compact information hierarchy of Atuin's shell
+search without depending on Atuin's application code:
 
 | Region | Contents |
 | --- | --- |
-| Header | active search mode, pwd matching mode, fuzzy query, context hint |
-| Matches | selectable history rows |
-| Shortcuts | currently configured shortcuts |
+| Header | `cmdscope` version, responsive key hints, shown/total history count |
+| Tabs | `Search` and `Inspect`; context review activates `Inspect` |
+| History | selectable rows with accessible status, execution duration, relative age, command, and width-aware metadata |
+| Query | fixed-width scope badge (`GLOBAL`, `PWD:*`, `GIT-ROOT`, or `INSPECT ±N`) and a horizontally scrolling editor |
+| Preview | safe multiline selected-command preview with exit, duration, and pwd context |
 
 History rows render as:
 
-    <selection-marker> <status> <command>  <metadata...>
+    > ✓   123ms    19h ago cargo test  2023-11-14  /home/me/project
 
-Example with default metadata enabled:
+Successful rows use `✓`; failed rows use `×`, so command status is not encoded
+by color alone. Duration remains green for exit status `0` and red for a
+non-zero status. The selected row has a `>` marker plus reverse-video styling
+so it remains visible across terminal themes.
 
-    ▶ ok cargo test  2023-11-14  /home/me/project
+Rows reserve space for the command first. Optional date and pwd metadata is
+elided as the terminal narrows, and long paths are left-truncated so the most
+specific directory components remain visible. The header follows the same
+priority order: key hints disappear before identity and result counts.
 
-`ok` means exit status `0`; `fail` means a non-zero exit status. The selected row has both a `▶` marker and reverse-video styling so it remains visible across terminal themes.
+The renderer automatically removes the preview and borders on shorter terminal
+windows. In ultra-compact windows it keeps only the history list and scope/query
+line, preserving useful interaction rather than overflowing fixed panels. The
+query line avoids an extra border, reducing visual box noise and returning more
+rows to the history list.
+
+The query editor supports mid-string Unicode editing, an actual terminal
+cursor, horizontal scrolling with ellipsis markers, bracketed paste, word
+deletion, and clear-to-empty. Pasted newlines and tabs become spaces so the
+single-line search field remains predictable.
 
 Metadata is visible by default and can be toggled at runtime with `toggle_metadata` (`alt-m` by default). The configured metadata column order is preserved.
 
@@ -93,7 +113,14 @@ zero-width format characters, and the typed query receive the same treatment.
 | Key | Action |
 | --- | --- |
 | text input | update fuzzy filter |
-| Backspace | remove one filter character |
+| Backspace | remove the character before the query cursor |
+| Delete / Ctrl-D | remove the character under the query cursor |
+| Left / Ctrl-B | move the query cursor left |
+| Right / Ctrl-F | move the query cursor right |
+| Home / Ctrl-A | move to the beginning of the query |
+| End / Ctrl-E | move to the end of the query |
+| Ctrl-W | remove the previous query word |
+| Ctrl-U | clear the query |
 | Up / Ctrl-K | select previous result |
 | Down / Ctrl-N | select next result |
 | Tab | toggle global vs same-pwd filter |
@@ -176,6 +203,13 @@ All non-text shortcuts are configurable through TOML:
     accept = "enter"
     quit = ["esc", "ctrl-c"]
     backspace = "backspace"
+    delete = ["delete", "ctrl-d"]
+    delete_word = "ctrl-w"
+    clear_query = "ctrl-u"
+    cursor_left = ["left", "ctrl-b"]
+    cursor_right = ["right", "ctrl-f"]
+    cursor_start = ["home", "ctrl-a"]
+    cursor_end = ["end", "ctrl-e"]
 
     [pwd]
     # exact: only the current directory
@@ -267,7 +301,11 @@ Once the query had narrowed the candidate set, subsequent characters scanned 10,
       ▼
     terminal.rs ── terminal lifetime, input dispatch, blocking event loop
 
-`main.rs` now owns only CLI parsing and environment discovery. This keeps storage, filtering, state transitions, rendering, and terminal runtime in separate reviewable units.
+`main.rs` now owns only CLI parsing and environment discovery. This keeps
+storage, filtering, cursor-aware query state, rendering, and terminal runtime in
+separate reviewable units. The renderer returns an optional terminal cursor
+position; the terminal layer applies it without moving input behavior into the
+view.
 
 ### Metadata columns
 

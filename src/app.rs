@@ -7,7 +7,15 @@ use crate::{
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Msg {
     Input(char),
+    Paste(String),
     Backspace,
+    Delete,
+    DeleteWord,
+    ClearQuery,
+    CursorLeft,
+    CursorRight,
+    CursorStart,
+    CursorEnd,
     SelectNext,
     SelectPrevious,
     TogglePwdFilter,
@@ -46,6 +54,13 @@ impl From<KeyAction> for Msg {
             KeyAction::Accept => Self::Accept,
             KeyAction::Quit => Self::Quit,
             KeyAction::Backspace => Self::Backspace,
+            KeyAction::Delete => Self::Delete,
+            KeyAction::DeleteWord => Self::DeleteWord,
+            KeyAction::ClearQuery => Self::ClearQuery,
+            KeyAction::CursorLeft => Self::CursorLeft,
+            KeyAction::CursorRight => Self::CursorRight,
+            KeyAction::CursorStart => Self::CursorStart,
+            KeyAction::CursorEnd => Self::CursorEnd,
         }
     }
 }
@@ -53,9 +68,11 @@ impl From<KeyAction> for Msg {
 /// Pure application state for the interactive picker.
 pub struct AppModel {
     search: SearchEngine,
+    history_count: usize,
     current_pwd: Option<String>,
     git_root: Option<String>,
     query: String,
+    query_cursor: usize,
     search_mode: SearchMode,
     pwd_match_mode: PwdMatchMode,
     selected_index: usize,
@@ -77,13 +94,16 @@ impl AppModel {
         git_root: Option<String>,
         pwd_match_mode: PwdMatchMode,
     ) -> Self {
+        let history_count = store.len();
         let search = SearchEngine::new(store, 200);
         let visible = search.results().to_vec();
         Self {
             search,
+            history_count,
             current_pwd,
             git_root,
             query: String::new(),
+            query_cursor: 0,
             search_mode: SearchMode::All,
             pwd_match_mode,
             selected_index: 0,
@@ -95,15 +115,122 @@ impl AppModel {
         }
     }
 
+    fn insert_character(&mut self, character: char) {
+        self.query.insert(self.query_cursor, character);
+        self.query_cursor += character.len_utf8();
+        self.reset_search_results();
+    }
+
+    fn previous_query_boundary(&self) -> Option<usize> {
+        self.query[..self.query_cursor]
+            .char_indices()
+            .next_back()
+            .map(|(index, _)| index)
+    }
+
+    fn next_query_boundary(&self) -> Option<usize> {
+        self.query[self.query_cursor..]
+            .chars()
+            .next()
+            .map(|character| self.query_cursor + character.len_utf8())
+    }
+
+    fn restore_search_view(&mut self) {
+        let ViewMode::Context { anchor_index, .. } = self.view_mode else {
+            return;
+        };
+        self.leave_context();
+        self.refresh_results();
+        self.selected_index = self
+            .visible
+            .iter()
+            .position(|&index| index == anchor_index)
+            .unwrap_or(0);
+    }
+
     pub fn update(&mut self, msg: Msg) {
         match msg {
             Msg::Input(character) => {
-                self.query.push(character);
-                self.reset_search_results();
+                self.insert_character(character);
+            }
+            Msg::Paste(input) => {
+                let mut changed = false;
+                for character in input.chars() {
+                    let character = match character {
+                        '\r' | '\n' | '\t' => ' ',
+                        character if character.is_control() => continue,
+                        character => character,
+                    };
+                    self.query.insert(self.query_cursor, character);
+                    self.query_cursor += character.len_utf8();
+                    changed = true;
+                }
+                if changed {
+                    self.reset_search_results();
+                }
             }
             Msg::Backspace => {
-                self.query.pop();
-                self.reset_search_results();
+                if let Some(previous) = self.previous_query_boundary() {
+                    self.query.drain(previous..self.query_cursor);
+                    self.query_cursor = previous;
+                    self.reset_search_results();
+                }
+            }
+            Msg::Delete => {
+                if let Some(next) = self.next_query_boundary() {
+                    self.query.drain(self.query_cursor..next);
+                    self.reset_search_results();
+                }
+            }
+            Msg::DeleteWord => {
+                let original = self.query_cursor;
+                while self
+                    .query_before_cursor()
+                    .chars()
+                    .next_back()
+                    .is_some_and(char::is_whitespace)
+                {
+                    self.query_cursor = self.previous_query_boundary().unwrap_or(0);
+                }
+                while self
+                    .query_before_cursor()
+                    .chars()
+                    .next_back()
+                    .is_some_and(|character| !character.is_whitespace())
+                {
+                    self.query_cursor = self.previous_query_boundary().unwrap_or(0);
+                }
+                if self.query_cursor != original {
+                    self.query.drain(self.query_cursor..original);
+                    self.reset_search_results();
+                }
+            }
+            Msg::ClearQuery => {
+                if !self.query.is_empty() {
+                    self.query.clear();
+                    self.query_cursor = 0;
+                    self.reset_search_results();
+                }
+            }
+            Msg::CursorLeft => {
+                self.restore_search_view();
+                if let Some(previous) = self.previous_query_boundary() {
+                    self.query_cursor = previous;
+                }
+            }
+            Msg::CursorRight => {
+                self.restore_search_view();
+                if let Some(next) = self.next_query_boundary() {
+                    self.query_cursor = next;
+                }
+            }
+            Msg::CursorStart => {
+                self.restore_search_view();
+                self.query_cursor = 0;
+            }
+            Msg::CursorEnd => {
+                self.restore_search_view();
+                self.query_cursor = self.query.len();
             }
             Msg::SelectNext => {
                 if !self.visible.is_empty() {
@@ -223,6 +350,18 @@ impl AppModel {
 
     pub fn query(&self) -> &str {
         &self.query
+    }
+
+    pub fn query_cursor(&self) -> usize {
+        self.query_cursor
+    }
+
+    pub fn query_before_cursor(&self) -> &str {
+        &self.query[..self.query_cursor]
+    }
+
+    pub fn history_count(&self) -> usize {
+        self.history_count
     }
 
     pub fn search_mode(&self) -> SearchMode {

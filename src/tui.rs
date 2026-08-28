@@ -1,30 +1,107 @@
-use crate::{AppConfig, AppModel, HistoryColumn, HistoryEntry, KeyConfig, SearchMode};
+use crate::{AppConfig, AppModel, HistoryColumn, HistoryEntry, SearchMode};
 use ratatui::{
-    layout::{Constraint, Direction, Layout},
-    prelude::{Buffer, Rect},
+    layout::{Alignment, Constraint, Direction, Layout},
+    prelude::{Buffer, Color, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, Paragraph, StatefulWidget, Widget},
+    widgets::{
+        Block, BorderType, Borders, List, ListItem, Paragraph, StatefulWidget, Tabs, Widget, Wrap,
+    },
 };
-use std::borrow::Cow;
+use std::{
+    borrow::Cow,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+const MODE_WIDTH: usize = 14;
+const INPUT_PREFIX_WIDTH: usize = MODE_WIDTH + 3;
+const MIN_COMMAND_WIDTH: usize = 12;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Compactness {
+    Ultra,
+    Compact,
+    Full,
+}
 
 /// Render a complete `cmdscope` frame into a Ratatui buffer.
 ///
-/// Rendering is intentionally a pure projection of `AppModel` plus `AppConfig`;
-/// keyboard handling and state transitions live elsewhere.
-pub fn render(model: &AppModel, config: &AppConfig, area: Rect, buf: &mut Buffer) {
+/// The returned position is the real terminal cursor for the query editor. It
+/// is absent while reviewing context or when the terminal is too narrow to
+/// expose an editable query cell.
+pub fn render(
+    model: &AppModel,
+    config: &AppConfig,
+    area: Rect,
+    buf: &mut Buffer,
+) -> Option<(u16, u16)> {
+    if area.is_empty() {
+        return None;
+    }
+
+    let area = horizontal_inset(area);
+    let compactness = compactness(area);
+    let constraints = match compactness {
+        Compactness::Ultra => vec![Constraint::Min(1), Constraint::Length(1)],
+        Compactness::Compact => vec![
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Min(1),
+            Constraint::Length(1),
+        ],
+        Compactness::Full => vec![
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Min(4),
+            Constraint::Length(1),
+            Constraint::Length(4),
+        ],
+    };
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(4),
-            Constraint::Min(4),
-            Constraint::Length(6),
-        ])
+        .constraints(constraints)
         .split(area);
 
-    render_header(model, chunks[0], buf);
-    render_history(model, config, chunks[1], buf);
-    render_shortcuts(config, chunks[2], buf);
+    match compactness {
+        Compactness::Ultra => {
+            render_history(model, config, chunks[0], buf, compactness);
+            render_input(model, chunks[1], buf)
+        }
+        Compactness::Compact => {
+            render_header(model, config, chunks[0], buf);
+            render_tabs(model, chunks[1], buf);
+            render_history(model, config, chunks[2], buf, compactness);
+            render_input(model, chunks[3], buf)
+        }
+        Compactness::Full => {
+            render_header(model, config, chunks[0], buf);
+            render_tabs(model, chunks[1], buf);
+            render_history(model, config, chunks[2], buf, compactness);
+            let cursor = render_input(model, chunks[3], buf);
+            render_preview(model, chunks[4], buf);
+            cursor
+        }
+    }
+}
+
+fn horizontal_inset(area: Rect) -> Rect {
+    if area.width > 2 {
+        Rect::new(area.x + 1, area.y, area.width - 2, area.height)
+    } else {
+        area
+    }
+}
+
+fn compactness(area: Rect) -> Compactness {
+    if area.height <= 4 || area.width < 30 {
+        Compactness::Ultra
+    } else if area.height < 12 || area.width < 64 {
+        Compactness::Compact
+    } else {
+        Compactness::Full
+    }
 }
 
 fn display_text(input: &str) -> Cow<'_, str> {
@@ -48,6 +125,20 @@ fn display_text(input: &str) -> Cow<'_, str> {
     Cow::Owned(output)
 }
 
+fn preview_text(input: &str) -> String {
+    let mut output = String::with_capacity(input.len());
+    for character in input.chars() {
+        match character {
+            '\n' => output.push('\n'),
+            '\r' => output.push('␍'),
+            '\t' => output.push('⇥'),
+            character if needs_visible_replacement(character) => output.push('�'),
+            character => output.push(character),
+        }
+    }
+    output
+}
+
 fn needs_visible_replacement(character: char) -> bool {
     character.is_control()
         || matches!(
@@ -60,114 +151,543 @@ fn needs_visible_replacement(character: char) -> bool {
         )
 }
 
-fn render_header(model: &AppModel, area: Rect, buf: &mut Buffer) {
-    Paragraph::new(header_lines(model))
-        .block(Block::default().borders(Borders::ALL).title("cmdscope"))
+fn render_header(model: &AppModel, config: &AppConfig, area: Rect, buf: &mut Buffer) {
+    if area.is_empty() {
+        return;
+    }
+
+    let title = Line::from(vec![
+        Span::styled("cmdscope", Style::default().add_modifier(Modifier::BOLD)),
+        Span::styled(format!(" v{VERSION}"), Style::default().fg(Color::DarkGray)),
+    ]);
+    let count = if model.in_context_mode() {
+        format!(
+            "{} context · {} total",
+            model.visible_len(),
+            model.history_count()
+        )
+    } else {
+        format!(
+            "{} shown · {} total",
+            model.visible_len(),
+            model.history_count()
+        )
+    };
+    let count_width = UnicodeWidthStr::width(count.as_str()) as u16;
+
+    if area.width >= 116 {
+        let chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Length(18),
+                Constraint::Min(1),
+                Constraint::Length(1),
+                Constraint::Length(count_width.min(area.width)),
+            ])
+            .split(area);
+        Paragraph::new(title).render(chunks[0], buf);
+        Paragraph::new(help_line(model, config))
+            .alignment(Alignment::Center)
+            .style(Style::default().fg(Color::DarkGray))
+            .render(chunks[1], buf);
+        Paragraph::new(count)
+            .alignment(Alignment::Right)
+            .style(Style::default().fg(Color::DarkGray))
+            .render(chunks[3], buf);
+    } else if area.width >= 50 {
+        let chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Min(1),
+                Constraint::Length(count_width.min(area.width)),
+            ])
+            .split(area);
+        Paragraph::new(title).render(chunks[0], buf);
+        Paragraph::new(count)
+            .alignment(Alignment::Right)
+            .style(Style::default().fg(Color::DarkGray))
+            .render(chunks[1], buf);
+    } else {
+        Paragraph::new(title).render(area, buf);
+    }
+}
+
+fn render_tabs(model: &AppModel, area: Rect, buf: &mut Buffer) {
+    if area.is_empty() {
+        return;
+    }
+    Tabs::new([Line::from("Search"), Line::from("Inspect")])
+        .select(usize::from(model.in_context_mode()))
+        .divider(" │ ")
+        .highlight_style(
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )
         .render(area, buf);
 }
 
-fn render_history(model: &AppModel, config: &AppConfig, area: Rect, buf: &mut Buffer) {
+fn render_history(
+    model: &AppModel,
+    config: &AppConfig,
+    area: Rect,
+    buf: &mut Buffer,
+    compactness: Compactness,
+) {
+    if area.is_empty() {
+        return;
+    }
+
+    let title = history_title(model);
+    let list_area = if compactness == Compactness::Full {
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .title(title);
+        let inner = block.inner(area);
+        block.render(area, buf);
+        inner
+    } else {
+        area
+    };
+
+    if model.visible_len() == 0 {
+        let message = if model.query().is_empty() {
+            "No history entries in this scope".to_string()
+        } else {
+            format!(
+                "No matches for “{}” · {} clears the query",
+                truncate_end_to_width(display_text(model.query()).as_ref(), 28),
+                primary_binding(&config.keys.clear_query)
+            )
+        };
+        Paragraph::new(message)
+            .alignment(Alignment::Center)
+            .style(Style::default().fg(Color::DarkGray))
+            .render(list_area, buf);
+        return;
+    }
+
+    let content_width = usize::from(list_area.width.saturating_sub(2));
+    let now = current_unix_seconds();
     let items = model
         .visible()
-        .map(|entry| history_item(entry, model.metadata_visible(), &config.ui.history_columns))
+        .map(|entry| {
+            history_item(
+                entry,
+                model.metadata_visible(),
+                &config.ui.history_columns,
+                now,
+                content_width,
+            )
+        })
         .collect::<Vec<_>>();
-    let title = if model.in_context_mode() {
-        format!("context ±{}", model.context_radius())
-    } else {
-        format!("matches ({})", model.visible_len())
-    };
-    let list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title(title))
-        .highlight_symbol("▶ ")
-        .highlight_style(Style::default().add_modifier(Modifier::REVERSED));
-    let selected = (model.visible_len() > 0).then_some(model.selected_index());
-    let mut state = ratatui::widgets::ListState::default().with_selected(selected);
-    StatefulWidget::render(list, area, buf, &mut state);
+    let list = List::new(items).highlight_symbol("> ").highlight_style(
+        Style::default()
+            .add_modifier(Modifier::REVERSED)
+            .add_modifier(Modifier::BOLD),
+    );
+    let mut state = ratatui::widgets::ListState::default()
+        .with_selected(Some(model.selected_index()))
+        .with_offset(model.selected_index().saturating_sub(2));
+    StatefulWidget::render(list, list_area, buf, &mut state);
 }
 
-fn render_shortcuts(config: &AppConfig, area: Rect, buf: &mut Buffer) {
-    Paragraph::new(help_lines(config))
-        .block(Block::default().borders(Borders::ALL).title("shortcuts"))
+fn history_title(model: &AppModel) -> String {
+    if model.in_context_mode() {
+        format!(
+            " Inspect {}/{} · ±{} ",
+            model.selected_index() + 1,
+            model.visible_len(),
+            model.context_radius()
+        )
+    } else if model.visible_len() == 0 {
+        " 0 matches ".to_string()
+    } else {
+        format!(
+            " {}/{} matches ",
+            model.selected_index() + 1,
+            model.visible_len()
+        )
+    }
+}
+
+fn render_input(model: &AppModel, area: Rect, buf: &mut Buffer) -> Option<(u16, u16)> {
+    if area.is_empty() {
+        return None;
+    }
+
+    let mode = input_mode(model);
+    let badge = format!("[{mode:^MODE_WIDTH$}] ");
+    if usize::from(area.width) <= INPUT_PREFIX_WIDTH {
+        Paragraph::new(truncate_end_to_width(&badge, usize::from(area.width)))
+            .style(Style::default().fg(Color::Cyan))
+            .render(area, buf);
+        return None;
+    }
+
+    let available = usize::from(area.width) - INPUT_PREFIX_WIDTH;
+    let mut spans = vec![Span::styled(
+        badge,
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD),
+    )];
+
+    if model.in_context_mode() {
+        let query = if model.query().is_empty() {
+            "query paused".to_string()
+        } else {
+            let query = truncate_end_to_width(display_text(model.query()).as_ref(), available);
+            format!("{query}  (paused)")
+        };
+        spans.push(Span::styled(
+            truncate_end_to_width(&query, available),
+            Style::default().fg(Color::DarkGray),
+        ));
+        Paragraph::new(Line::from(spans)).render(area, buf);
+        return None;
+    }
+
+    if model.query().is_empty() {
+        spans.push(Span::styled(
+            truncate_end_to_width("type to filter history", available),
+            Style::default().fg(Color::DarkGray),
+        ));
+        Paragraph::new(Line::from(spans)).render(area, buf);
+        return Some((area.x + INPUT_PREFIX_WIDTH as u16, area.y));
+    }
+
+    let text_width = available.saturating_sub(1);
+    let (window, cursor_column) = query_window(model.query(), model.query_cursor(), text_width);
+    spans.push(Span::raw(window));
+    Paragraph::new(Line::from(spans)).render(area, buf);
+
+    let cursor_x = area
+        .x
+        .saturating_add(INPUT_PREFIX_WIDTH as u16)
+        .saturating_add(u16::try_from(cursor_column).unwrap_or(u16::MAX))
+        .min(area.x.saturating_add(area.width.saturating_sub(1)));
+    Some((cursor_x, area.y))
+}
+
+fn render_preview(model: &AppModel, area: Rect, buf: &mut Buffer) {
+    if area.is_empty() {
+        return;
+    }
+
+    let (title, text) = model.selected().map_or_else(
+        || {
+            (
+                " selected command ".to_string(),
+                "No command selected".to_string(),
+            )
+        },
+        |entry| {
+            let mode = if model.in_context_mode() {
+                " inspect "
+            } else {
+                " selected "
+            };
+            let cwd_budget = usize::from(area.width).saturating_sub(34).min(36);
+            let cwd = truncate_start_to_width(display_text(&entry.cwd).as_ref(), cwd_budget);
+            (
+                format!(
+                    "{mode}· exit {} · {} · {cwd} ",
+                    entry.exit,
+                    format_execution_duration(entry.duration)
+                ),
+                preview_text(&entry.command),
+            )
+        },
+    );
+
+    Paragraph::new(text)
+        .style(Style::default().fg(Color::Gray))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .title(title),
+        )
+        .wrap(Wrap { trim: false })
         .render(area, buf);
 }
 
-fn header_lines<'a>(model: &'a AppModel) -> Vec<Line<'a>> {
-    let mode = match model.search_mode() {
-        SearchMode::All => Cow::Borrowed("global"),
-        SearchMode::SamePwd => Cow::Owned(format!("pwd:{}", model.pwd_match_mode().label())),
-        SearchMode::GitRoot => Cow::Borrowed("git-root"),
+fn input_mode(model: &AppModel) -> String {
+    if model.in_context_mode() {
+        return format!("INSPECT ±{}", model.context_radius());
+    }
+    match model.search_mode() {
+        SearchMode::All => "GLOBAL".to_string(),
+        SearchMode::SamePwd => format!("PWD:{}", model.pwd_match_mode().label().to_uppercase()),
+        SearchMode::GitRoot => "GIT-ROOT".to_string(),
+    }
+}
+
+fn help_line(model: &AppModel, config: &AppConfig) -> Line<'static> {
+    let entries = if model.in_context_mode() {
+        [
+            (&config.keys.quit, "exit"),
+            (&config.keys.context, "search"),
+            (&config.keys.context_expand, "grow"),
+            (&config.keys.context_shrink, "shrink"),
+        ]
+    } else {
+        [
+            (&config.keys.quit, "exit"),
+            (&config.keys.toggle_scope, "scope"),
+            (&config.keys.accept, "edit"),
+            (&config.keys.context, "inspect"),
+        ]
     };
-    vec![
-        Line::from(vec![
-            Span::styled("mode ", Style::default().add_modifier(Modifier::BOLD)),
-            Span::raw(mode),
-            Span::raw("  "),
-            Span::styled("query ", Style::default().add_modifier(Modifier::BOLD)),
-            Span::raw(display_text(model.query())),
-        ]),
-        Line::from(if model.in_context_mode() {
-            "reviewing time context; filter text is ignored until leaving context".to_string()
-        } else {
-            "filtering with skim fuzzy matching".to_string()
-        }),
-    ]
+    let mut spans = Vec::new();
+    for (index, (bindings, action)) in entries.into_iter().enumerate() {
+        if index > 0 {
+            spans.push(Span::raw(", "));
+        }
+        spans.push(Span::styled(
+            format!("<{}>", primary_binding(bindings)),
+            Style::default()
+                .fg(Color::Gray)
+                .add_modifier(Modifier::BOLD),
+        ));
+        spans.push(Span::raw(format!(": {action}")));
+    }
+    Line::from(spans)
 }
 
-fn help_lines(config: &AppConfig) -> Vec<Line<'static>> {
-    let selection = format!(
-        "{}/{}",
-        KeyConfig::display(&config.keys.select_previous),
-        KeyConfig::display(&config.keys.select_next)
-    );
-    vec![
-        Line::from(format!(
-            "scopes: {} global · {} pwd · {} git-root · {} toggle",
-            KeyConfig::display(&config.keys.global),
-            KeyConfig::display(&config.keys.pwd),
-            KeyConfig::display(&config.keys.git_root),
-            KeyConfig::display(&config.keys.toggle_scope),
-        )),
-        Line::from(format!(
-            "pwd/context: {} mode · {} context · {}/{} grow/shrink",
-            KeyConfig::display(&config.keys.toggle_pwd_mode),
-            KeyConfig::display(&config.keys.context),
-            KeyConfig::display(&config.keys.context_expand),
-            KeyConfig::display(&config.keys.context_shrink),
-        )),
-        Line::from(format!(
-            "view/nav: {} metadata · {} select",
-            KeyConfig::display(&config.keys.toggle_metadata),
-            selection,
-        )),
-        Line::from(format!(
-            "finish/edit: {} accept · {} quit · {} backspace",
-            KeyConfig::display(&config.keys.accept),
-            KeyConfig::display(&config.keys.quit),
-            KeyConfig::display(&config.keys.backspace),
-        )),
-    ]
+fn primary_binding(bindings: &[String]) -> &str {
+    bindings.first().map_or("?", String::as_str)
 }
 
-fn history_item<'a>(
-    entry: &'a HistoryEntry,
+fn history_item(
+    entry: &HistoryEntry,
     metadata_visible: bool,
     columns: &[HistoryColumn],
-) -> ListItem<'a> {
-    let exit = if entry.exit == 0 { "ok " } else { "fail " };
+    now: i64,
+    content_width: usize,
+) -> ListItem<'static> {
+    let success = entry.exit == 0;
+    let status_style = Style::default()
+        .fg(if success { Color::Green } else { Color::Red })
+        .add_modifier(Modifier::BOLD);
+    let show_duration = content_width >= 24;
+    let show_age = content_width >= 42;
+
     let mut spans = vec![
-        Span::styled(exit, Style::default().add_modifier(Modifier::BOLD)),
-        Span::raw(display_text(&entry.command)),
+        Span::styled(if success { "✓" } else { "×" }, status_style),
+        Span::raw(" "),
     ];
+    let mut prefix_width = 2;
+    if show_duration {
+        spans.push(Span::styled(
+            format!("{:>7}", format_execution_duration(entry.duration)),
+            status_style,
+        ));
+        spans.push(Span::raw(" "));
+        prefix_width += 8;
+    }
+    if show_age {
+        spans.push(Span::styled(
+            format!("{:>10}", format_relative_age(entry.timestamp, now)),
+            Style::default().fg(Color::DarkGray),
+        ));
+        spans.push(Span::raw(" "));
+        prefix_width += 11;
+    }
+
+    let mut metadata = Vec::<(String, Style)>::new();
+    let mut metadata_width = 0;
     if metadata_visible {
         for column in columns {
-            spans.push(Span::raw("  "));
-            spans.push(match column {
-                HistoryColumn::Date => Span::raw(format_unix_date(entry.timestamp)),
-                HistoryColumn::Pwd => Span::raw(display_text(&entry.cwd)),
-            });
+            let value = match column {
+                HistoryColumn::Date => format_unix_date(entry.timestamp),
+                HistoryColumn::Pwd => {
+                    truncate_start_to_width(display_text(&entry.cwd).as_ref(), 28)
+                }
+            };
+            let width = UnicodeWidthStr::width(value.as_str());
+            let required = 2 + width;
+            if content_width.saturating_sub(prefix_width + metadata_width + required)
+                >= MIN_COMMAND_WIDTH
+            {
+                metadata_width += required;
+                metadata.push((value, Style::default().fg(Color::DarkGray)));
+            }
         }
     }
+
+    let command_width = content_width.saturating_sub(prefix_width + metadata_width);
+    spans.push(Span::raw(truncate_end_to_width(
+        display_text(&entry.command).as_ref(),
+        command_width,
+    )));
+    for (value, style) in metadata {
+        spans.push(Span::raw("  "));
+        spans.push(Span::styled(value, style));
+    }
     ListItem::new(Line::from(spans))
+}
+
+fn query_window(query: &str, cursor: usize, max_width: usize) -> (String, usize) {
+    if max_width == 0 {
+        return (String::new(), 0);
+    }
+    let left = display_text(&query[..cursor]).into_owned();
+    let right = display_text(&query[cursor..]).into_owned();
+    let left_width = UnicodeWidthStr::width(left.as_str());
+    let right_width = UnicodeWidthStr::width(right.as_str());
+    if left_width + right_width <= max_width {
+        let mut visible = left;
+        visible.push_str(&right);
+        return (visible, left_width);
+    }
+    if right_width == 0 {
+        let tail = tail_to_width(&left, max_width.saturating_sub(1)).0;
+        let visible = format!("…{tail}");
+        return (visible.clone(), UnicodeWidthStr::width(visible.as_str()));
+    }
+    if left_width == 0 {
+        let mut visible = head_to_width(&right, max_width.saturating_sub(1)).0;
+        visible.push('…');
+        return (visible, 0);
+    }
+
+    let desired_left = max_width.saturating_mul(2) / 3;
+    let (left_tail, left_clipped) = tail_to_width(&left, desired_left.saturating_sub(1));
+    let mut visible_left = String::new();
+    if left_clipped {
+        visible_left.push('…');
+    }
+    visible_left.push_str(&left_tail);
+    let cursor_column = UnicodeWidthStr::width(visible_left.as_str());
+    let remaining = max_width.saturating_sub(cursor_column);
+    let (mut visible_right, right_clipped) = head_to_width(&right, remaining);
+    if right_clipped && remaining > 0 {
+        visible_right = head_to_width(&right, remaining.saturating_sub(1)).0;
+        visible_right.push('…');
+    }
+    visible_left.push_str(&visible_right);
+    (visible_left, cursor_column)
+}
+
+fn truncate_end_to_width(input: &str, width: usize) -> String {
+    if UnicodeWidthStr::width(input) <= width {
+        return input.to_string();
+    }
+    if width == 0 {
+        return String::new();
+    }
+    let mut output = head_to_width(input, width.saturating_sub(1)).0;
+    output.push('…');
+    output
+}
+
+fn truncate_start_to_width(input: &str, width: usize) -> String {
+    if UnicodeWidthStr::width(input) <= width {
+        return input.to_string();
+    }
+    if width == 0 {
+        return String::new();
+    }
+    let tail = tail_to_width(input, width.saturating_sub(1)).0;
+    format!("…{tail}")
+}
+
+fn head_to_width(input: &str, width: usize) -> (String, bool) {
+    let mut output = String::new();
+    let mut used = 0;
+    let mut clipped = false;
+    for character in input.chars() {
+        let character_width = UnicodeWidthChar::width(character).unwrap_or(0);
+        if used + character_width > width {
+            clipped = true;
+            break;
+        }
+        output.push(character);
+        used += character_width;
+    }
+    clipped |= output.len() < input.len();
+    (output, clipped)
+}
+
+fn tail_to_width(input: &str, width: usize) -> (String, bool) {
+    let mut characters = Vec::new();
+    let mut used = 0;
+    let mut clipped = false;
+    for character in input.chars().rev() {
+        let character_width = UnicodeWidthChar::width(character).unwrap_or(0);
+        if used + character_width > width {
+            clipped = true;
+            break;
+        }
+        characters.push(character);
+        used += character_width;
+    }
+    clipped |= characters.len() < input.chars().count();
+    characters.reverse();
+    (characters.into_iter().collect(), clipped)
+}
+
+fn current_unix_seconds() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .and_then(|duration| i64::try_from(duration.as_secs()).ok())
+        .unwrap_or(i64::MAX)
+}
+
+fn format_execution_duration(nanoseconds: i64) -> String {
+    let nanoseconds = u64::try_from(nanoseconds).unwrap_or(0);
+    format_duration(Duration::from_nanos(nanoseconds))
+}
+
+fn format_relative_age(timestamp: i64, now: i64) -> String {
+    let seconds = normalized_timestamp_seconds(timestamp);
+    if seconds >= now {
+        "now".to_string()
+    } else {
+        let elapsed = u64::try_from(now.saturating_sub(seconds)).unwrap_or(u64::MAX);
+        format!("{} ago", format_seconds(elapsed))
+    }
+}
+
+fn format_duration(duration: Duration) -> String {
+    let seconds = duration.as_secs();
+    if seconds > 0 {
+        return format_seconds(seconds);
+    }
+    let nanos = u64::from(duration.subsec_nanos());
+    if nanos >= 1_000_000 {
+        format!("{}ms", nanos / 1_000_000)
+    } else if nanos >= 1_000 {
+        format!("{}us", nanos / 1_000)
+    } else if nanos > 0 {
+        format!("{nanos}ns")
+    } else {
+        "0s".to_string()
+    }
+}
+
+fn format_seconds(seconds: u64) -> String {
+    const YEAR: u64 = 31_557_600;
+    const MONTH: u64 = 2_630_016;
+    const DAY: u64 = 86_400;
+    const HOUR: u64 = 3_600;
+    const MINUTE: u64 = 60;
+    for (unit_seconds, suffix) in [
+        (YEAR, "y"),
+        (MONTH, "mo"),
+        (DAY, "d"),
+        (HOUR, "h"),
+        (MINUTE, "m"),
+    ] {
+        if seconds >= unit_seconds {
+            return format!("{}{suffix}", seconds / unit_seconds);
+        }
+    }
+    format!("{seconds}s")
 }
 
 fn format_unix_date(timestamp: i64) -> String {

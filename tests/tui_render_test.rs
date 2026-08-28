@@ -20,6 +20,107 @@ fn model() -> AppModel {
 }
 
 #[test]
+fn query_uses_a_real_cursor_and_keeps_it_visible_while_scrolling() {
+    let mut model = model();
+    for character in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ".chars() {
+        model.update(Msg::Input(character));
+    }
+
+    let (text_at_end, cursor_at_end) = rendered_text_at(&model, &AppConfig::default(), 70, 14);
+    let cursor_at_end = cursor_at_end.expect("search mode exposes a cursor");
+    assert!(text_at_end.contains('…'), "{text_at_end}");
+    assert!(cursor_at_end.0 < 70, "cursor={cursor_at_end:?}");
+
+    model.update(Msg::CursorStart);
+    let (_, cursor_at_start) = rendered_text_at(&model, &AppConfig::default(), 70, 14);
+    assert!(cursor_at_start.expect("cursor").0 < cursor_at_end.0);
+}
+
+#[test]
+fn narrow_rows_prioritize_status_and_command_over_optional_metadata() {
+    let (text, _) = rendered_text_at(&model(), &AppConfig::default(), 46, 10);
+
+    assert!(text.contains('✓'), "{text}");
+    assert!(text.contains("cargo test"), "{text}");
+    assert!(!text.contains("2023-11-14"), "{text}");
+    assert!(!text.contains("/repo/src"), "{text}");
+}
+
+#[test]
+fn failed_commands_have_a_non_color_status_indicator() {
+    let model = AppModel::new(
+        HistoryStore::from_entries(vec![HistoryEntry::new(
+            "1",
+            1_700_000_000,
+            17,
+            "false",
+            "/repo",
+            "s",
+            "h",
+        )]),
+        Some("/repo".to_string()),
+    );
+
+    let text = rendered_text(&model, &AppConfig::default());
+    assert!(text.contains('×'), "{text}");
+}
+
+#[test]
+fn preview_preserves_multiline_structure_without_terminal_controls() {
+    let model = AppModel::new(
+        HistoryStore::from_entries(vec![HistoryEntry::new(
+            "1",
+            1_700_000_000,
+            0,
+            "printf one\ntwo\u{1b}[31m",
+            "/repo",
+            "s",
+            "h",
+        )]),
+        Some("/repo".to_string()),
+    );
+
+    let text = rendered_text(&model, &AppConfig::default());
+    assert!(text.contains("printf one"), "{text}");
+    assert!(text.contains("two�[31m"), "{text}");
+    assert!(!text.contains('\u{1b}'), "{text}");
+}
+
+#[test]
+fn atuin_inspired_chrome_shows_title_tabs_count_and_scope_input() {
+    let text = rendered_text(&model(), &AppConfig::default());
+
+    assert!(text.contains("cmdscope v"), "rendered output:\n{text}");
+    assert!(text.contains("Search"), "rendered output:\n{text}");
+    assert!(text.contains("Inspect"), "rendered output:\n{text}");
+    assert!(
+        text.contains("2 shown · 2 total"),
+        "rendered output:\n{text}"
+    );
+    assert!(
+        text.contains("[    GLOBAL    ]"),
+        "rendered output:\n{text}"
+    );
+}
+
+#[test]
+fn context_mode_activates_inspect_tab_and_input_badge() {
+    let mut model = model();
+    model.update(Msg::ToggleContext);
+
+    let text = rendered_text(&model, &AppConfig::default());
+
+    assert!(
+        text.contains("Inspect 2/2 · ±1"),
+        "rendered output:\n{text}"
+    );
+    assert!(
+        text.contains("[  INSPECT ±1  ]"),
+        "rendered output:\n{text}"
+    );
+}
+
+#[test]
 fn query_bidi_controls_are_rendered_visibly() {
     let mut model = model();
     for character in "git\u{202e}status".chars() {
@@ -28,7 +129,7 @@ fn query_bidi_controls_are_rendered_visibly() {
 
     let text = rendered_text(&model, &AppConfig::default());
 
-    assert!(text.contains("query git�status"), "{text}");
+    assert!(text.contains("git�status"), "{text}");
     assert!(!text.contains('\u{202e}'), "{text}");
 }
 
@@ -70,21 +171,21 @@ fn rendering_is_safe_for_tiny_terminal_areas() {
 }
 
 #[test]
-fn footer_shows_all_configurable_action_groups() {
+fn header_uses_configured_primary_action_hints() {
     let config = AppConfig::from_toml(
         r#"
         [keys]
         toggle_scope = "ctrl-t"
-        backspace = "delete"
+        context = "ctrl-i"
         "#,
     )
     .unwrap();
 
-    let text = rendered_text(&model(), &config);
+    let text = rendered_text_at(&model(), &config, 140, 14).0;
 
-    assert!(text.contains("ctrl-t toggle"), "{text}");
-    assert!(text.contains("delete backspace"), "{text}");
-    assert!(text.contains("finish/edit:"), "{text}");
+    assert!(text.contains("<ctrl-t>: scope"), "{text}");
+    assert!(text.contains("<ctrl-i>: inspect"), "{text}");
+    assert!(text.contains("<enter>: edit"), "{text}");
 }
 
 #[test]
@@ -96,8 +197,10 @@ fn empty_results_render_without_an_invalid_selection() {
 
     let text = rendered_text(&model, &AppConfig::default());
 
-    assert!(text.contains("matches (0)"), "{text}");
-    assert!(!text.contains('▶'), "{text}");
+    assert!(text.contains("0 matches"), "{text}");
+    assert!(text.contains("No matches for"), "{text}");
+    assert!(text.contains("ctrl-u clears"), "{text}");
+    assert!(!text.contains("> "), "{text}");
 }
 
 #[test]
@@ -169,18 +272,28 @@ fn control_characters_are_rendered_as_safe_single_line_symbols() {
 }
 
 fn rendered_text(model: &AppModel, config: &AppConfig) -> String {
-    let area = Rect::new(0, 0, 100, 14);
-    let mut buffer = Buffer::empty(area);
-    tui::render(model, config, area, &mut buffer);
+    rendered_text_at(model, config, 100, 14).0
+}
 
-    (area.y..area.y + area.height)
+fn rendered_text_at(
+    model: &AppModel,
+    config: &AppConfig,
+    width: u16,
+    height: u16,
+) -> (String, Option<(u16, u16)>) {
+    let area = Rect::new(0, 0, width, height);
+    let mut buffer = Buffer::empty(area);
+    let cursor = tui::render(model, config, area, &mut buffer);
+
+    let text = (area.y..area.y + area.height)
         .map(|y| {
             (area.x..area.x + area.width)
                 .map(|x| buffer.cell((x, y)).expect("cell in bounds").symbol())
                 .collect::<String>()
         })
         .collect::<Vec<_>>()
-        .join("\n")
+        .join("\n");
+    (text, cursor)
 }
 
 #[test]
@@ -190,14 +303,15 @@ fn selected_row_has_visible_marker() {
 
     let text = rendered_text(&model, &AppConfig::default());
 
-    assert!(text.contains("▶ ok git status"), "rendered output:\n{text}");
+    assert!(text.contains("> "), "rendered output:\n{text}");
+    assert!(text.contains("git status"), "rendered output:\n{text}");
 }
 
 #[test]
 fn default_render_includes_status_date_and_pwd_metadata() {
     let text = rendered_text(&model(), &AppConfig::default());
 
-    assert!(text.contains("ok"), "rendered output:\n{text}");
+    assert!(text.contains("0s"), "rendered output:\n{text}");
     assert!(text.contains("2023-11-14"), "rendered output:\n{text}");
     assert!(text.contains("/repo"), "rendered output:\n{text}");
 }
@@ -210,8 +324,14 @@ fn metadata_can_be_toggled_off_at_runtime() {
     let text = rendered_text(&model, &AppConfig::default());
 
     assert!(text.contains("git status"), "rendered output:\n{text}");
-    assert!(!text.contains("2023-11-14"), "rendered output:\n{text}");
-    assert!(!text.contains("/repo"), "rendered output:\n{text}");
+    assert!(
+        !text.contains("git status  2023-11-14"),
+        "rendered output:\n{text}"
+    );
+    assert!(
+        !text.contains("git status  /repo"),
+        "rendered output:\n{text}"
+    );
 }
 
 #[test]

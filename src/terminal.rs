@@ -1,7 +1,10 @@
 use anyhow::Result;
 use cmdscope::{AppConfig, AppModel, HistoryStore, KeyMap, Msg, tui};
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
+    event::{
+        self, DisableBracketedPaste, EnableBracketedPaste, Event, KeyCode, KeyEvent, KeyEventKind,
+        KeyModifiers,
+    },
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
@@ -19,7 +22,8 @@ impl TerminalSession {
     fn enter() -> Result<Self> {
         enable_raw_mode()?;
         let mut stderr = io::stderr();
-        if let Err(error) = execute!(stderr, EnterAlternateScreen) {
+        if let Err(error) = execute!(stderr, EnterAlternateScreen, EnableBracketedPaste) {
+            let _ = execute!(stderr, DisableBracketedPaste, LeaveAlternateScreen);
             let _ = disable_raw_mode();
             return Err(error.into());
         }
@@ -27,7 +31,7 @@ impl TerminalSession {
             Ok(terminal) => terminal,
             Err(error) => {
                 let mut stderr = io::stderr();
-                let _ = execute!(stderr, LeaveAlternateScreen);
+                let _ = execute!(stderr, DisableBracketedPaste, LeaveAlternateScreen);
                 let _ = disable_raw_mode();
                 return Err(error.into());
             }
@@ -43,7 +47,11 @@ impl TerminalSession {
             return Ok(());
         }
         disable_raw_mode()?;
-        execute!(self.terminal.backend_mut(), LeaveAlternateScreen)?;
+        execute!(
+            self.terminal.backend_mut(),
+            DisableBracketedPaste,
+            LeaveAlternateScreen
+        )?;
         self.terminal.show_cursor()?;
         self.restored = true;
         Ok(())
@@ -54,7 +62,11 @@ impl Drop for TerminalSession {
     fn drop(&mut self) {
         if !self.restored {
             let _ = disable_raw_mode();
-            let _ = execute!(self.terminal.backend_mut(), LeaveAlternateScreen);
+            let _ = execute!(
+                self.terminal.backend_mut(),
+                DisableBracketedPaste,
+                LeaveAlternateScreen
+            );
             let _ = self.terminal.show_cursor();
         }
     }
@@ -103,13 +115,21 @@ fn run_event_loop(
                 draw(terminal, model, config)?;
             }
             Event::Resize(_, _) => draw(terminal, model, config)?,
+            Event::Paste(input) => {
+                model.update(Msg::Paste(input));
+                draw(terminal, model, config)?;
+            }
             _ => {}
         }
     }
 }
 
 fn draw(terminal: &mut TuiTerminal, model: &AppModel, config: &AppConfig) -> Result<()> {
-    terminal.draw(|frame| tui::render(model, config, frame.area(), frame.buffer_mut()))?;
+    terminal.draw(|frame| {
+        if let Some(position) = tui::render(model, config, frame.area(), frame.buffer_mut()) {
+            frame.set_cursor_position(position);
+        }
+    })?;
     Ok(())
 }
 

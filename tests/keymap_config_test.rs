@@ -30,6 +30,36 @@ fn toml_can_remap_navigation_and_acceptance() {
 }
 
 #[test]
+fn default_query_editing_keys_are_reachable() {
+    let keymap = AppConfig::default().compile_keymap().unwrap();
+
+    for (event, action) in [
+        (
+            KeyEvent::new(KeyCode::Left, KeyModifiers::NONE),
+            KeyAction::CursorLeft,
+        ),
+        (
+            KeyEvent::new(KeyCode::Char('f'), KeyModifiers::CONTROL),
+            KeyAction::CursorRight,
+        ),
+        (
+            KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL),
+            KeyAction::ClearQuery,
+        ),
+        (
+            KeyEvent::new(KeyCode::Char('w'), KeyModifiers::CONTROL),
+            KeyAction::DeleteWord,
+        ),
+        (
+            KeyEvent::new(KeyCode::Delete, KeyModifiers::NONE),
+            KeyAction::Delete,
+        ),
+    ] {
+        assert_eq!(keymap.action_for(event), Some(action));
+    }
+}
+
+#[test]
 fn modified_unicode_character_bindings_are_normalized_consistently() {
     let config = AppConfig::from_toml(
         r#"

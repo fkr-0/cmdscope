@@ -7,6 +7,28 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html/)
 
 ## [Unreleased]
 
+### Added
+
+- Added an adaptive Atuin-inspired TUI with `Search`/`Inspect` tabs, a
+  version/help/history-count header, aligned execution-duration and relative-age
+  columns, scope-aware query badges, and a selected-command preview.
+- Added cursor-aware mid-query editing with Unicode-safe left/right, home/end,
+  forward delete, previous-word delete, clear-query, horizontal scrolling, and
+  a real terminal cursor.
+- Added bracketed-paste handling that normalizes multiline clipboard text into
+  the single-line search field.
+
+### Changed
+
+- Replaced the fixed three-panel layout and four-line shortcut footer with
+  full, compact, and ultra-compact projections that preserve usability in
+  small terminal windows.
+- Prioritized command text over optional row metadata, left-truncated long
+  paths, made header help width-aware, reduced query-panel box noise, and added
+  actionable empty states.
+- Added non-color `✓`/`×` status indicators and a safe multiline preview with
+  selected-command exit, duration, and working-directory context.
+
 ## [0.2.2] - 2026-07-26
 
 ### Added

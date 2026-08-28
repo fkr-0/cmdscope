@@ -20,6 +20,13 @@ pub enum KeyAction {
     Accept,
     Quit,
     Backspace,
+    Delete,
+    DeleteWord,
+    ClearQuery,
+    CursorLeft,
+    CursorRight,
+    CursorStart,
+    CursorEnd,
 }
 
 impl KeyAction {
@@ -39,6 +46,13 @@ impl KeyAction {
             Self::Accept => "accept",
             Self::Quit => "quit",
             Self::Backspace => "backspace",
+            Self::Delete => "delete",
+            Self::DeleteWord => "delete_word",
+            Self::ClearQuery => "clear_query",
+            Self::CursorLeft => "cursor_left",
+            Self::CursorRight => "cursor_right",
+            Self::CursorStart => "cursor_start",
+            Self::CursorEnd => "cursor_end",
         }
     }
 }
@@ -226,6 +240,13 @@ impl KeyMap {
             (KeyAction::Accept, config.accept.as_slice()),
             (KeyAction::Quit, config.quit.as_slice()),
             (KeyAction::Backspace, config.backspace.as_slice()),
+            (KeyAction::Delete, config.delete.as_slice()),
+            (KeyAction::DeleteWord, config.delete_word.as_slice()),
+            (KeyAction::ClearQuery, config.clear_query.as_slice()),
+            (KeyAction::CursorLeft, config.cursor_left.as_slice()),
+            (KeyAction::CursorRight, config.cursor_right.as_slice()),
+            (KeyAction::CursorStart, config.cursor_start.as_slice()),
+            (KeyAction::CursorEnd, config.cursor_end.as_slice()),
         ] {
             if configured.is_empty() {
                 bail!(

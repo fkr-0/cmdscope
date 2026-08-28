@@ -12,6 +12,52 @@ fn model() -> AppModel {
 }
 
 #[test]
+fn query_editor_inserts_and_deletes_unicode_at_the_cursor() {
+    let mut model = model();
+    model.update(Msg::Input('a'));
+    model.update(Msg::Input('c'));
+    model.update(Msg::CursorLeft);
+    model.update(Msg::Input('ö'));
+
+    assert_eq!(model.query(), "aöc");
+    assert_eq!(model.query_before_cursor(), "aö");
+
+    model.update(Msg::Backspace);
+    model.update(Msg::Delete);
+
+    assert_eq!(model.query(), "a");
+    assert_eq!(model.query_cursor(), 1);
+}
+
+#[test]
+fn query_editor_supports_word_deletion_clear_and_normalized_paste() {
+    let mut model = model();
+    model.update(Msg::Paste("git\tstatus\n--short\u{7}".to_string()));
+
+    assert_eq!(model.query(), "git status --short");
+
+    model.update(Msg::DeleteWord);
+    assert_eq!(model.query(), "git status ");
+    model.update(Msg::ClearQuery);
+    assert_eq!(model.query(), "");
+    assert_eq!(model.query_cursor(), 0);
+}
+
+#[test]
+fn cursor_navigation_leaves_context_without_losing_the_anchor() {
+    let mut model = model();
+    model.update(Msg::Input('l'));
+    model.update(Msg::ToggleContext);
+    let selected = model.selected().map(|entry| entry.id.clone());
+
+    model.update(Msg::CursorStart);
+
+    assert!(!model.in_context_mode());
+    assert_eq!(model.query_cursor(), 0);
+    assert_eq!(model.selected().map(|entry| entry.id.clone()), selected);
+}
+
+#[test]
 fn duplicate_ids_do_not_move_context_away_from_the_selected_entry() {
     let mut model = AppModel::new(
         HistoryStore::from_entries(vec![
@@ -106,6 +152,18 @@ fn typing_updates_query_and_results() {
 
     assert_eq!(model.query(), "git");
     assert_eq!(model.visible_commands(), vec!["git status"]);
+}
+
+#[test]
+fn model_retains_total_history_count_while_filtering() {
+    let mut model = model();
+
+    for character in "git".chars() {
+        model.update(Msg::Input(character));
+    }
+
+    assert_eq!(model.history_count(), 3);
+    assert_eq!(model.visible_len(), 1);
 }
 
 #[test]

@@ -77,6 +77,20 @@ pub struct KeyConfig {
     pub quit: Vec<String>,
     #[serde(default = "default_key_backspace", deserialize_with = "one_or_many")]
     pub backspace: Vec<String>,
+    #[serde(default = "default_key_delete", deserialize_with = "one_or_many")]
+    pub delete: Vec<String>,
+    #[serde(default = "default_key_delete_word", deserialize_with = "one_or_many")]
+    pub delete_word: Vec<String>,
+    #[serde(default = "default_key_clear_query", deserialize_with = "one_or_many")]
+    pub clear_query: Vec<String>,
+    #[serde(default = "default_key_cursor_left", deserialize_with = "one_or_many")]
+    pub cursor_left: Vec<String>,
+    #[serde(default = "default_key_cursor_right", deserialize_with = "one_or_many")]
+    pub cursor_right: Vec<String>,
+    #[serde(default = "default_key_cursor_start", deserialize_with = "one_or_many")]
+    pub cursor_start: Vec<String>,
+    #[serde(default = "default_key_cursor_end", deserialize_with = "one_or_many")]
+    pub cursor_end: Vec<String>,
 }
 
 impl Default for KeyConfig {
@@ -96,6 +110,13 @@ impl Default for KeyConfig {
             accept: default_key_accept(),
             quit: default_key_quit(),
             backspace: default_key_backspace(),
+            delete: default_key_delete(),
+            delete_word: default_key_delete_word(),
+            clear_query: default_key_clear_query(),
+            cursor_left: default_key_cursor_left(),
+            cursor_right: default_key_cursor_right(),
+            cursor_start: default_key_cursor_start(),
+            cursor_end: default_key_cursor_end(),
         }
     }
 }
@@ -223,4 +244,25 @@ fn default_key_quit() -> Vec<String> {
 }
 fn default_key_backspace() -> Vec<String> {
     binding("backspace")
+}
+fn default_key_delete() -> Vec<String> {
+    bindings(&["delete", "ctrl-d"])
+}
+fn default_key_delete_word() -> Vec<String> {
+    binding("ctrl-w")
+}
+fn default_key_clear_query() -> Vec<String> {
+    binding("ctrl-u")
+}
+fn default_key_cursor_left() -> Vec<String> {
+    bindings(&["left", "ctrl-b"])
+}
+fn default_key_cursor_right() -> Vec<String> {
+    bindings(&["right", "ctrl-f"])
+}
+fn default_key_cursor_start() -> Vec<String> {
+    bindings(&["home", "ctrl-a"])
+}
+fn default_key_cursor_end() -> Vec<String> {
+    bindings(&["end", "ctrl-e"])
 }
