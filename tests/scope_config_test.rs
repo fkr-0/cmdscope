@@ -223,6 +223,52 @@ fn context_review_can_expand_and_shrink_around_selection() {
 }
 
 #[test]
+fn mount_point_scopes_respect_path_component_boundaries() {
+    let store = HistoryStore::from_entries(vec![
+        HistoryEntry::new("1", 100, 0, "mount-root", "/mnt/data", "s", "h"),
+        HistoryEntry::new("2", 110, 0, "mount-child", "/mnt/data/project", "s", "h"),
+        HistoryEntry::new("3", 120, 0, "prefix-only", "/mnt/database", "s", "h"),
+    ]);
+    let scope = SearchScope::pwd(Some("/mnt/data"), PwdMatchMode::IncludeSubdirs);
+
+    let commands = store
+        .search_with_scope("", &scope, 10)
+        .into_iter()
+        .map(|entry| entry.command)
+        .collect::<Vec<_>>();
+
+    assert_eq!(commands, vec!["mount-child", "mount-root"]);
+}
+
+#[test]
+fn symlink_like_aliases_are_not_silently_equated_to_physical_paths() {
+    let store = HistoryStore::from_entries(vec![
+        HistoryEntry::new("1", 100, 0, "physical", "/srv/project", "s", "h"),
+        HistoryEntry::new("2", 110, 0, "alias", "/home/me/project-link", "s", "h"),
+    ]);
+
+    let physical = SearchScope::pwd(Some("/srv/project"), PwdMatchMode::Exact);
+    let alias = SearchScope::pwd(Some("/home/me/project-link"), PwdMatchMode::Exact);
+
+    assert_eq!(
+        store
+            .search_with_scope("", &physical, 10)
+            .into_iter()
+            .map(|entry| entry.command)
+            .collect::<Vec<_>>(),
+        vec!["physical"]
+    );
+    assert_eq!(
+        store
+            .search_with_scope("", &alias, 10)
+            .into_iter()
+            .map(|entry| entry.command)
+            .collect::<Vec<_>>(),
+        vec!["alias"]
+    );
+}
+
+#[test]
 fn config_loads_shortcuts_and_pwd_semantics_from_toml() {
     let config = AppConfig::from_toml(
         r#"

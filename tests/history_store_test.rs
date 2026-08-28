@@ -76,6 +76,35 @@ fn context_can_be_limited_to_same_pwd() {
 }
 
 #[test]
+fn context_crosses_session_boundaries_in_chronological_order() {
+    let store = HistoryStore::from_entries(vec![
+        HistoryEntry::new("late", 300, 0, "third", "/repo", "session-c", "h"),
+        HistoryEntry::new("early", 100, 0, "first", "/repo", "session-a", "h"),
+        HistoryEntry::new("middle", 200, 0, "second", "/repo", "session-b", "h"),
+    ]);
+
+    let context = store
+        .context_around("middle", 1, SearchMode::All, None)
+        .unwrap();
+
+    assert_eq!(
+        context
+            .iter()
+            .map(|entry| (
+                entry.command.as_str(),
+                entry.session.as_str(),
+                entry.timestamp
+            ))
+            .collect::<Vec<_>>(),
+        vec![
+            ("first", "session-a", 100),
+            ("second", "session-b", 200),
+            ("third", "session-c", 300),
+        ]
+    );
+}
+
+#[test]
 fn duplicate_ids_are_rejected_as_ambiguous_for_id_based_context() {
     let store = HistoryStore::from_entries(vec![
         HistoryEntry::new("dup", 100, 0, "first", "/repo", "s", "h"),

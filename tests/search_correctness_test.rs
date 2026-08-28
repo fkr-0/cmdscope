@@ -110,6 +110,68 @@ fn empty_store_and_zero_result_limit_are_safe() {
 }
 
 #[test]
+fn long_unicode_and_shell_metacharacter_queries_match_literal_history_text() {
+    let long_prefix = "x".repeat(16_384);
+    let store = HistoryStore::from_entries(vec![
+        HistoryEntry::new(
+            "long",
+            100,
+            0,
+            format!("{long_prefix} printf '%s' \"$HOME\"; echo Ω | sed 's/[&]/_/g'"),
+            "/repo",
+            "session",
+            "host",
+        ),
+        HistoryEntry::new(
+            "unicode",
+            200,
+            0,
+            "printf '東京/naïve/🙂' && echo '$PATH'",
+            "/repo",
+            "session",
+            "host",
+        ),
+    ]);
+    let mut engine = SearchEngine::new(store.clone(), 10);
+
+    for query in ["Ω", "$HOME", ";", "|", "[&]", "東京", "🙂", "$PATH"] {
+        engine.set_query(query);
+        assert_eq!(
+            engine.results(),
+            reference(&store, query, 10),
+            "query={query:?}"
+        );
+        assert!(!engine.results().is_empty(), "query={query:?}");
+    }
+}
+
+#[test]
+fn hundreds_of_matches_are_bounded_without_changing_ranking() {
+    let store = HistoryStore::from_entries(
+        (0..1_000)
+            .map(|index| {
+                HistoryEntry::new(
+                    index.to_string(),
+                    index as i64,
+                    0,
+                    format!("cargo test package-{index}"),
+                    "/repo",
+                    "session",
+                    "host",
+                )
+            })
+            .collect(),
+    );
+    let mut engine = SearchEngine::new(store.clone(), 200);
+
+    engine.set_query("cargo");
+
+    assert_eq!(engine.stats().matched, 1_000);
+    assert_eq!(engine.stats().returned, 200);
+    assert_eq!(engine.results(), reference(&store, "cargo", 200));
+}
+
+#[test]
 fn changing_scope_preserves_the_active_query() {
     let store = store();
     let mut engine = SearchEngine::new(store, 37);

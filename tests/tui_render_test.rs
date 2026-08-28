@@ -204,6 +204,27 @@ fn empty_results_render_without_an_invalid_selection() {
 }
 
 #[test]
+fn context_view_renders_neighbor_dates_in_chronological_order_across_sessions() {
+    let mut model = AppModel::new(
+        HistoryStore::from_entries(vec![
+            HistoryEntry::new("1", 1_700_000_000, 0, "first", "/repo", "s1", "h"),
+            HistoryEntry::new("2", 1_700_086_400, 0, "second", "/repo", "s2", "h"),
+            HistoryEntry::new("3", 1_700_172_800, 0, "third", "/repo", "s3", "h"),
+        ]),
+        Some("/repo".to_string()),
+    );
+    model.update(Msg::SelectNext);
+    model.update(Msg::ToggleContext);
+
+    let text = rendered_text_at(&model, &AppConfig::default(), 120, 14).0;
+    let first = text.find("2023-11-14").expect("first date");
+    let second = text.find("2023-11-15").expect("second date");
+    let third = text.find("2023-11-16").expect("third date");
+
+    assert!(first < second && second < third, "{text}");
+}
+
+#[test]
 fn future_second_timestamps_are_not_misclassified_as_milliseconds() {
     let model = AppModel::new(
         HistoryStore::from_entries(vec![HistoryEntry::new(

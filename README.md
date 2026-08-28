@@ -143,7 +143,16 @@ configurable and are rejected rather than being mistaken for plain keys.
 
 ## Shell integration
 
-Example Bash/Zsh binding shape:
+`cmdscope` writes the full-screen UI to stderr and reserves stdout exclusively
+for the accepted command. The command is emitted as history text, not shell-
+escaped or evaluated, so quotes, variables, pipes, semicolons, glob characters,
+and internal newlines reach the shell editing buffer unchanged. Bash/Zsh
+command substitution (and Fish `string collect` by default) strips trailing
+newlines, including cmdscope's record separator; a history entry whose command
+itself ends with newline bytes cannot preserve those trailing bytes through
+these bindings.
+
+Zsh/ZLE:
 
     cmdscope-widget() {
       local selected
@@ -156,11 +165,30 @@ Example Bash/Zsh binding shape:
     zle -N cmdscope-widget
     bindkey '^R' cmdscope-widget
 
-For Bash/readline, wire `cmdscope` as a command substitution in a custom `bind -x` function.
+Bash/readline:
 
-The full-screen UI is written to stderr. Stdout is reserved exclusively for the
-accepted command, so command substitution receives no alternate-screen or
-cursor-control escape sequences.
+    cmdscope-widget() {
+      local selected
+      selected="$(CMDSCOPE_DB="$HOME/.local/share/atuin/history.db" cmdscope)" || return
+      [[ -n "$selected" ]] || return
+      READLINE_LINE="$selected"
+      READLINE_POINT=${#READLINE_LINE}
+    }
+    bind -x '"\C-r":cmdscope-widget'
+
+Fish:
+
+    function cmdscope-widget
+        set -l selected (env CMDSCOPE_DB="$HOME/.local/share/atuin/history.db" cmdscope | string collect)
+        or return
+        test -n "$selected"; or return
+        commandline --replace "$selected"
+        commandline -f repaint
+    end
+    bind \cr cmdscope-widget
+
+Fish's `string collect` is important for multiline history entries because an
+ordinary unquoted Fish command substitution splits output at newlines.
 
 ## Development
 
@@ -328,7 +356,12 @@ Search modes:
 Unavailable pwd or Git-root context produces an empty result set rather than
 silently falling back to global history. Unix root scopes include all absolute
 descendants; Windows drive and UNC paths are matched case-insensitively across
-slash styles, including non-ASCII case pairs.
+slash styles, including non-ASCII case pairs. Directory matching is deliberately
+lexical after platform-aware separator/case normalization: mount points behave
+like ordinary component-bounded subtrees, while a symlink alias and its physical
+target remain distinct unless the history database recorded the same path form.
+This avoids filesystem lookups and silently retargeting old history when a
+symlink later changes.
 
 Context review:
 

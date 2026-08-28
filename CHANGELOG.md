@@ -17,6 +17,9 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html/)
   a real terminal cursor.
 - Added bracketed-paste handling that normalizes multiline clipboard text into
   the single-line search field.
+- Added robustness coverage for long and Unicode commands, shell metacharacter
+  queries, high-cardinality fuzzy matches, directory boundaries, chronological
+  context across sessions, and shell-safe selected-command output.
 
 ### Changed
 
@@ -28,6 +31,9 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html/)
   actionable empty states.
 - Added non-color `✓`/`×` status indicators and a safe multiline preview with
   selected-command exit, duration, and working-directory context.
+- Documented distinct Bash, Zsh, and Fish Ctrl-R integrations, including Fish
+  multiline collection, and clarified lexical symlink/mount-point scope
+  semantics.
 
 ## [0.2.2] - 2026-07-26
 
