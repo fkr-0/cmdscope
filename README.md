@@ -386,10 +386,11 @@ The public API is intentionally small so tests can exercise behavior without sta
 
 ## Release builds
 
-GitHub Actions runs CI on pushes and pull requests. Pushing a tag matching `v*` creates a GitHub Release and uploads packaged binaries:
+GitHub Actions runs CI on pushes and pull requests. Pushing a tag matching `v*` creates a GitHub Release and uploads packaged binaries. Choose the version only after Cargo and CHANGELOG release identity agree:
 
-    git tag v0.2.2
-    git push origin v0.2.2
+    VERSION=X.Y.Z
+    git tag "v$VERSION"
+    git push origin "v$VERSION"
 
 Release assets currently include:
 

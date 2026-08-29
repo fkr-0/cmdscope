@@ -6,6 +6,7 @@ description = "Interactive Rust TUI for filtering Atuin shell history"
 license = "MIT"
 repository = "https://github.com/fkr-0/cmdscope"
 readme = "README.md"
+exclude = ["release-evidence.yml", "tasks.yml"]
 
 [lib]
 name = "cmdscope"
