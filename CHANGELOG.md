@@ -35,6 +35,13 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html/)
   multiline collection, and clarified lexical symlink/mount-point scope
   semantics.
 
+### Fixed
+
+- Matched Atuin's runtime CWD identity by preferring the shell-provided `PWD`
+  over the physical process current directory, fixing same-directory filtering
+  when history was recorded through a logical symlink path while retaining a
+  fallback when `PWD` is unset.
+
 ## [0.2.2] - 2026-07-26
 
 ### Added

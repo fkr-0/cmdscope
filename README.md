@@ -356,12 +356,13 @@ Search modes:
 Unavailable pwd or Git-root context produces an empty result set rather than
 silently falling back to global history. Unix root scopes include all absolute
 descendants; Windows drive and UNC paths are matched case-insensitively across
-slash styles, including non-ASCII case pairs. Directory matching is deliberately
+slash styles, including non-ASCII case pairs. At startup, cmdscope prefers the
+shell-provided `PWD` and falls back to the process current directory only when
+`PWD` is unset. This matches current Atuin history recording for logical symlink
+paths without canonicalizing every history row. Directory matching remains
 lexical after platform-aware separator/case normalization: mount points behave
 like ordinary component-bounded subtrees, while a symlink alias and its physical
-target remain distinct unless the history database recorded the same path form.
-This avoids filesystem lookups and silently retargeting old history when a
-symlink later changes.
+target remain distinct when the history database contains both path forms.
 
 Context review:
 

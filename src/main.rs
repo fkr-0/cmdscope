@@ -38,9 +38,7 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    let cwd = env::current_dir()
-        .ok()
-        .map(|path| path.display().to_string());
+    let cwd = runtime_cwd();
     let git_root = detect_git_root();
     let selected =
         terminal::run_tui(store, cwd, git_root, config, keymap).context("terminal UI failed")?;
@@ -53,6 +51,21 @@ fn main() -> Result<()> {
 fn write_command(command: &str) -> Result<()> {
     let stdout = io::stdout();
     writeln!(stdout.lock(), "{command}").context("failed to write selected command")
+}
+
+fn runtime_cwd() -> Option<String> {
+    runtime_cwd_from(env::var_os("PWD").map(PathBuf::from), || {
+        env::current_dir().ok()
+    })
+}
+
+fn runtime_cwd_from(
+    shell_pwd: Option<PathBuf>,
+    process_cwd: impl FnOnce() -> Option<PathBuf>,
+) -> Option<String> {
+    shell_pwd
+        .or_else(process_cwd)
+        .map(|path| path.display().to_string())
 }
 
 fn default_config_path() -> PathBuf {
@@ -74,4 +87,26 @@ fn detect_git_root() -> Option<String> {
     let root = String::from_utf8(output.stdout).ok()?;
     let root = root.trim();
     (!root.is_empty()).then(|| root.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::runtime_cwd_from;
+    use std::path::PathBuf;
+
+    #[test]
+    fn runtime_cwd_prefers_shell_pwd_without_resolving_it() {
+        let cwd = runtime_cwd_from(Some(PathBuf::from("/logical/project-link")), || {
+            panic!("process cwd fallback must not run when PWD is present")
+        });
+
+        assert_eq!(cwd.as_deref(), Some("/logical/project-link"));
+    }
+
+    #[test]
+    fn runtime_cwd_falls_back_when_shell_pwd_is_unset() {
+        let cwd = runtime_cwd_from(None, || Some(PathBuf::from("/physical/project")));
+
+        assert_eq!(cwd.as_deref(), Some("/physical/project"));
+    }
 }
