@@ -2,148 +2,128 @@ version: 1
 release:
   unit: repository
   project: cmdscope
-  date: 2026-07-26
-  base_revision: d8859c7baad5cd4849076940a99f50027be3eb03
-  release_revision: HEAD
-  version_before: 0.2.1
-  version_after: 0.2.2
-  proposed_tag: v0.2.2
+  date: 2026-08-29
+  phase: 3
+  phase2_authority:
+    path: /home/user/code/chatgpt-tooling/prolonged/cmdscope/phase2-20260829T181111.md
+    sha256: f37b3f582cf68c0dd11eca07a8db5c4be79886822c43ba751573d205c9121344
+  qualified_revision: 423d0e61b908c859a8ef8e5e09bec0b5011ca108
+  origin_main: 2b4689655aa3cb8f5737dc0e2c0e8906723e4031
+  current_cargo_version: 0.2.2
+  changelog_latest_release: 0.2.2
+  changelog_has_unreleased_changes: true
+  local_tags:
+    - v0.0.1
+  remote_tags:
+    - v0.0.1
+  release_identity_status: BLOCKED_RELEASE_IDENTITY
+  candidate_version: null
+  proposed_tag: null
+  decision_required: >-
+    Choose the next version and matching vX.Y.Z tag for the current Unreleased
+    changes. Cargo.toml and Cargo.lock still identify 0.2.2, CHANGELOG already
+    records 0.2.2 as released and contains newer Unreleased work, and neither
+    local nor remote refs contain any tag after v0.0.1.
   tag_created: false
   push_state: not_requested
   publish_state: not_requested
+  deploy_state: not_requested
+  remote_release_state: not_created
 
 metadata:
-  changed:
-    - Cargo.toml
-    - Cargo.lock
-    - CHANGELOG.md
-    - README.md
+  phase3_changes:
+    - Cargo.toml: exclude release-evidence.yml and tasks.yml from Cargo packages
+    - README.md: replace stale v0.2.2 tag example with an identity-neutral VERSION example
+    - tasks.yml: refresh current verification and blocked identity state
+    - release-evidence.yml: replace stale 2026-07-26 release evidence with Phase-3 evidence
+  package_evidence_excluded:
     - release-evidence.yml
-    - src/app.rs
-    - src/history.rs
-    - src/keymap.rs
-    - src/main.rs
-    - src/scope.rs
-    - src/search.rs
-    - src/tui.rs
     - tasks.yml
-    - tests/app_update_test.rs
-    - tests/cli_test.rs
-    - tests/history_store_test.rs
-    - tests/keymap_config_test.rs
-    - tests/scope_config_test.rs
-    - tests/search_correctness_test.rs
-    - tests/sqlite_load_test.rs
-    - tests/tui_render_test.rs
-  version_agreement:
-    cargo_metadata: 0.2.2
-    cargo_lock: 0.2.2
-    cli_version: cmdscope 0.2.2
+  dependency_changes: none
+  lockfile_changed: false
+  workflow_changed: false
 
-verification:
-  - name: formatting
-    command: cargo fmt --all -- --check
-    exit_code: 0
-    duration_ms: 126
-  - name: strict_clippy
-    command: cargo clippy --all-targets --locked -- -D warnings
-    exit_code: 0
-    duration_ms: 1045
-  - name: debug_tests
-    command: cargo test --all-targets --locked
-    exit_code: 0
-    duration_ms: 1341
-    result: 64 passed; 0 failed
-  - name: release_tests
-    command: cargo test --release --all-targets --locked
-    exit_code: 0
-    duration_ms: 3297
-    result: 64 passed; 0 failed
-  - name: documentation_tests
-    command: cargo test --doc --locked
-    exit_code: 0
-    duration_ms: 741
-    result: 0 passed; 0 failed
-  - name: documentation
-    command: cargo doc --no-deps --locked
-    exit_code: 0
-    duration_ms: 1360
-  - name: release_build
-    command: cargo build --release --locked
-    exit_code: 0
-    duration_ms: 111
-  - name: cargo_package_manifest
-    command: cargo package --allow-dirty --list --locked
-    exit_code: 0
-    duration_ms: 59
-    result: package metadata complete; no manifest warning
-  - name: cli_version
-    command: target/release/cmdscope --version
-    exit_code: 0
-    duration_ms: 2
-    result: cmdscope 0.2.2
-  - name: real_database_smoke
-    command: target/release/cmdscope --config ./examples.config.toml --db ./history.db --print-first
-    exit_code: 0
-    duration_ms: 238
-  - name: old_schema_and_multiline_cli
-    command: cargo test --release --test cli_test print_first_supports_old_schema_and_exact_multiline_output --locked
-    exit_code: 0
-    result: older schema loaded and multiline command was emitted byte-for-byte with one final newline
-  - name: sqlite_schema_compatibility
-    command: cargo test --release --test sqlite_load_test --locked
-    exit_code: 0
-    result: current and older schemas loaded; deleted rows filtered; malformed schemas and values reported with database context
-  - name: interactive_accept_pty_smoke
-    command: target/release/cmdscope --config ./examples.config.toml --db ./history.db
-    exit_code: 0
-    result: stdout exactly matched print-first output; no escape byte reached stdout; alternate screen and cursor state restored
-  - name: interactive_cancel_pty_smoke
-    command: target/release/cmdscope --config ./examples.config.toml --db ./history.db
-    exit_code: 0
-    result: cancel produced empty stdout; alternate screen and cursor state restored
-  - name: differential_search_correctness
-    command: cargo test --release --test search_correctness_test --locked
-    exit_code: 0
-    result: incremental query transitions matched full rescans and active query survived scope changes
-  - name: filtering_benchmark
-    command: target/release/examples/filter_bench 100000
-    exit_code: 0
-    duration_ms: 952
-    rows: 100000
-    legacy_total_us: 563406
-    incremental_total_us: 354643
-    sequence_speedup: 1.59
-    narrowed_scan_rows: 10000
-    full_scope_rows: 100000
-  - name: todo_markers
-    command: extract_todos TODO FIXME HACK XXX
-    exit_code: 0
-    result: none found
-  - name: machine_interpreter
-    command: cargo miri test --lib
-    status: omitted
-    reason: the Miri component is unavailable for the installed stable toolchain
+ci_parity:
+  workflow: .github/workflows/ci-release.yml
+  checks:
+    - command: cargo fmt --all -- --check
+      exit_code: 0
+    - command: cargo clippy --all-targets --locked -- -D warnings
+      exit_code: 0
+    - command: cargo test --all-targets --locked
+      exit_code: 0
+      result: 84 passed; 0 failed
+  release_matrix:
+    - os: ubuntu-latest
+      asset: cmdscope-x86_64-unknown-linux-gnu.tar.gz
+      archive: tar.gz
+      binary: cmdscope
+    - os: macos-latest
+      asset: cmdscope-macos.tar.gz
+      archive: tar.gz
+      binary: cmdscope
+    - os: windows-latest
+      asset: cmdscope-x86_64-pc-windows-msvc.zip
+      archive: zip
+      binary: cmdscope.exe
+  documented_asset_names_match_workflow: true
+  documented_payload_matches_workflow: true
 
-quality:
-  automated_score: 94
-  remaining_findings:
-    - generic aggregate cyclomatic-complexity warnings in keymap, scope, and TUI modules; strict Clippy reports no warning or error
+packaging:
+  command: cargo package --locked
+  exit_code: 0
+  verified_files: 29
+  result: package built and verified successfully
+  accidental_evidence_inclusion: false
+  excluded_or_absent:
+    - .ws-bridge
+    - '*.db'
+    - target
+    - release-evidence.yml
+    - tasks.yml
 
-artifacts:
-  - path: target/release/cmdscope
-    size_bytes: 4975136
-    sha256: eb29a06f74570de0df5d338642562408f9290b9c0ddbbf7a169c7f7fc8e4eaf4
-  - path: target/release-evidence/cmdscope-0.2.2-x86_64-unknown-linux-gnu.tar.gz
-    size_bytes: 2211638
-    sha256: ccbb03c769b070b4e062ef18e8130fe802fe3fccc0c95620ac017d3f521bf82b
+local_linux_asset:
+  build_command: cargo build --release --locked
+  build_exit_code: 0
+  evidence_dir: .ws-bridge/evidence/cmdscope-phase3-20260829T1915
+  archive:
+    path: .ws-bridge/evidence/cmdscope-phase3-20260829T1915/cmdscope-x86_64-unknown-linux-gnu.tar.gz
+    size_bytes: 2254322
+    sha256: d806beeea4a781ac70a69f55b4b10381a45a1449e53245513ae1a0c3f67a5c13
     contents:
       - cmdscope
       - README.md
       - CHANGELOG.md
       - examples.config.toml
+  binary:
+    path: target/release/cmdscope
+    size_bytes: 5091192
+    sha256: 20b79e3a62b59f6283ba4f33a37a41db1d8f6b3dc65e60421e658804ee43df7d
+  smoke:
+    version_command: extracted/cmdscope --version
+    version_result: cmdscope 0.2.2
+    print_first_command: extracted/cmdscope --config ./examples.config.toml --db ./history.db --print-first
+    print_first_exit_code: 0
+    print_first_bytes: 83
+    print_first_sha256: e38d00f4cc07f2c6814822b843738c2c55ed903a9a905133dbb1ca0fb1f80ee0
+    fixture_sha256_before: fa2d2e6117569faaff5c9a450bd12b1abab1e4fd3e49848c685c5eb8d7c12c1f
+    fixture_sha256_after: fa2d2e6117569faaff5c9a450bd12b1abab1e4fd3e49848c685c5eb8d7c12c1f
+    fixture_unchanged: true
+
+reused_phase2_evidence:
+  documentation:
+    command: cargo doc --no-deps
+    result: passed
+    justification: Rust source is unchanged in Phase 3
+  benchmark:
+    command: cargo run --release --example filter_bench -- 100000
+    rows: 100000
+    legacy_total_us: 553750
+    incremental_total_us: 347838
+    sequence_speedup: 1.59
+    justification: search implementation is unchanged in Phase 3
 
 limitations:
-  - Cross-platform release archives were not built locally; GitHub Actions owns macOS and Windows packaging.
-  - Miri was unavailable for the installed stable Rust toolchain.
-  - No tag, push, GitHub release, upload, or deployment was requested or performed.
+  - Release identity is intentionally unresolved; no version bump or tag was guessed.
+  - macOS and Windows release assets were not built locally; GitHub Actions owns those matrix builds.
+  - No push, publish, deployment, remote release creation, or tag mutation was performed.

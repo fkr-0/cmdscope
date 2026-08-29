@@ -1,21 +1,36 @@
 version: 1
 project: cmdscope
-reviewed_at: 2026-07-26
-release_candidate: 0.2.2
+reviewed_at: 2026-08-29
+release_candidate: null
+release_status: BLOCKED_RELEASE_IDENTITY
+release_identity_decision: >-
+  Choose the next version/tag for the Unreleased changes. Cargo and Cargo.lock
+  still report 0.2.2, CHANGELOG already has a released 0.2.2 section plus newer
+  Unreleased work, and both local and remote tag refs contain only v0.0.1.
 
 open: []
 
 verification:
   formatting: cargo fmt --all -- --check
-  lint: cargo clippy --all-targets -- -D warnings
-  tests: 64 passed
-  docs: cargo doc --no-deps
-  real_db_smoke: passed against ./history.db
+  lint: cargo clippy --all-targets --locked -- -D warnings
+  tests: 84 passed via cargo test --all-targets --locked
+  package: cargo package --locked passed; 29 files; release evidence excluded
+  release_build: cargo build --release --locked passed
+  linux_asset:
+    path: .ws-bridge/evidence/cmdscope-phase3-20260829T1915/cmdscope-x86_64-unknown-linux-gnu.tar.gz
+    size_bytes: 2254322
+    sha256: d806beeea4a781ac70a69f55b4b10381a45a1449e53245513ae1a0c3f67a5c13
+    contents: [cmdscope, README.md, CHANGELOG.md, examples.config.toml]
+    binary_version: cmdscope 0.2.2
+    print_first_fixture: passed read-only; history.db hash unchanged
+  docs: cargo doc --no-deps passed in Phase 2; source unchanged in Phase 3
+  real_db_smoke: passed against ./history.db using the extracted release asset
   benchmark:
     rows: 100000
-    legacy_total_us: 563406
-    incremental_total_us: 354643
+    legacy_total_us: 553750
+    incremental_total_us: 347838
     sequence_speedup: 1.59
+    source: Phase 2; search implementation unchanged in Phase 3
 
 completed:
   - id: COMPAT-001
