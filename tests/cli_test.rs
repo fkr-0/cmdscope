@@ -69,6 +69,48 @@ fn print_first_preserves_shell_metacharacters_as_plain_stdout_text() {
 }
 
 #[test]
+fn null_terminated_output_preserves_trailing_newlines() {
+    let directory = tempdir().unwrap();
+    let database = directory.path().join("history.db");
+    let connection = Connection::open(&database).unwrap();
+    connection
+        .execute_batch(
+            "create table history (
+                id text primary key,
+                timestamp integer not null,
+                duration integer not null,
+                exit integer not null,
+                command text not null,
+                cwd text not null,
+                session text not null,
+                hostname text not null
+            );",
+        )
+        .unwrap();
+    let command = "printf one\n\n";
+    connection
+        .execute(
+            "insert into history values (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params!["nul", 20_i64, 0_i64, 0_i64, command, "/repo", "s", "h"],
+        )
+        .unwrap();
+
+    Command::cargo_bin("cmdscope")
+        .unwrap()
+        .env_remove("CMDSCOPE_CONFIG")
+        .env("XDG_CONFIG_HOME", directory.path().join("config"))
+        .args([
+            "--db",
+            database.to_str().unwrap(),
+            "--print-first",
+            "--null",
+        ])
+        .assert()
+        .success()
+        .stdout(format!("{command}\0"));
+}
+
+#[test]
 fn print_first_supports_old_schema_and_exact_multiline_output() {
     let directory = tempdir().unwrap();
     let database = directory.path().join("history.db");

@@ -146,17 +146,18 @@ configurable and are rejected rather than being mistaken for plain keys.
 `cmdscope` writes the full-screen UI to stderr and reserves stdout exclusively
 for the accepted command. The command is emitted as history text, not shell-
 escaped or evaluated, so quotes, variables, pipes, semicolons, glob characters,
-and internal newlines reach the shell editing buffer unchanged. Bash/Zsh
-command substitution (and Fish `string collect` by default) strips trailing
-newlines, including cmdscope's record separator; a history entry whose command
-itself ends with newline bytes cannot preserve those trailing bytes through
-these bindings.
+and internal newlines reach the shell editing buffer unchanged. By default the
+record is newline-terminated for backwards compatibility. Shell widgets should
+prefer `--null`: the NUL record terminator lets them distinguish cmdscope's
+separator from newline bytes that are part of the history command itself.
 
 Zsh/ZLE:
 
     cmdscope-widget() {
       local selected
-      selected="$(CMDSCOPE_DB="$HOME/.local/share/atuin/history.db" cmdscope)" || return
+      IFS= read -r -d '' selected < <(
+        CMDSCOPE_DB="$HOME/.local/share/atuin/history.db" cmdscope --null
+      ) || return
       [[ -n "$selected" ]] || return
       BUFFER="$selected"
       CURSOR=${#BUFFER}
@@ -169,7 +170,9 @@ Bash/readline:
 
     cmdscope-widget() {
       local selected
-      selected="$(CMDSCOPE_DB="$HOME/.local/share/atuin/history.db" cmdscope)" || return
+      IFS= read -r -d '' selected < <(
+        CMDSCOPE_DB="$HOME/.local/share/atuin/history.db" cmdscope --null
+      ) || return
       [[ -n "$selected" ]] || return
       READLINE_LINE="$selected"
       READLINE_POINT=${#READLINE_LINE}
@@ -179,16 +182,20 @@ Bash/readline:
 Fish:
 
     function cmdscope-widget
-        set -l selected (env CMDSCOPE_DB="$HOME/.local/share/atuin/history.db" cmdscope | string collect)
+        set -l selected (env CMDSCOPE_DB="$HOME/.local/share/atuin/history.db" cmdscope --null | string split0)
         or return
+        test (count $selected) -eq 1; or return
         test -n "$selected"; or return
         commandline --replace "$selected"
         commandline -f repaint
     end
     bind \cr cmdscope-widget
 
-Fish's `string collect` is important for multiline history entries because an
-ordinary unquoted Fish command substitution splits output at newlines.
+Bash and Zsh use `read -d ''` with process substitution so command substitution
+cannot trim trailing newline bytes. Fish's `string split0` similarly treats the
+NUL-delimited record as one command-substitution element even when it contains
+newlines. The default newline-terminated output remains available for scripts
+that do not need trailing-newline fidelity.
 
 ## Development
 
@@ -284,9 +291,9 @@ The interactive search engine retains `skim`'s fzf-style dynamic-programming sco
 
 1. Scope changes build a reusable vector of history indices.
    The active fuzzy query is retained and applied to the new scope.
-2. Extending a query scans only matches from the previous query layer.
-3. Backspace restores an already-ranked prefix layer without rescanning.
-4. Prefix caching is bounded to 32 layers so long queries cannot grow memory without limit.
+2. Adding characters anywhere in a query scans only matches from the previous query layer, so mid-string editor insertions stay incremental.
+3. Backspace restores an already-ranked cached query layer without rescanning.
+4. Query-layer caching is bounded to 32 layers so long edit sessions cannot grow memory without limit.
 5. A bounded heap keeps only the best 200 results instead of fully sorting every match.
 6. The model and renderer borrow immutable history rows by index instead of cloning commands.
 7. The event loop blocks while idle and redraws only after input or resize events.

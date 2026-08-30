@@ -21,6 +21,10 @@ struct Args {
 
     #[arg(long)]
     print_first: bool,
+
+    /// Terminate selected-command stdout with NUL instead of newline.
+    #[arg(long = "null")]
+    nul: bool,
 }
 
 fn main() -> Result<()> {
@@ -33,7 +37,7 @@ fn main() -> Result<()> {
     let store = HistoryStore::load_sqlite(&args.db)?;
     if args.print_first {
         if let Some(entry) = store.search("", cmdscope::SearchMode::All, None, 1).first() {
-            write_command(&entry.command)?;
+            write_command(&entry.command, args.nul)?;
         }
         return Ok(());
     }
@@ -43,14 +47,23 @@ fn main() -> Result<()> {
     let selected =
         terminal::run_tui(store, cwd, git_root, config, keymap).context("terminal UI failed")?;
     if let Some(command) = selected {
-        write_command(&command)?;
+        write_command(&command, args.nul)?;
     }
     Ok(())
 }
 
-fn write_command(command: &str) -> Result<()> {
+fn write_command(command: &str, nul_terminated: bool) -> Result<()> {
     let stdout = io::stdout();
-    writeln!(stdout.lock(), "{command}").context("failed to write selected command")
+    let mut stdout = stdout.lock();
+    stdout
+        .write_all(command.as_bytes())
+        .context("failed to write selected command")?;
+    stdout
+        .write_all(if nul_terminated { b"\0" } else { b"\n" })
+        .context("failed to write selected command terminator")?;
+    stdout
+        .flush()
+        .context("failed to flush selected command output")
 }
 
 fn runtime_cwd() -> Option<String> {
