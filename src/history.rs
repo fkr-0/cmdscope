@@ -159,9 +159,11 @@ impl HistoryStore {
         } else {
             ""
         };
+        // Store construction performs the deterministic chronological sort once.
+        // Keeping this query unordered avoids a redundant SQLite temp sort on large histories.
         let query = format!(
             "select id, timestamp, duration, exit, command, cwd, session, hostname \
-             from history{deleted_filter} order by timestamp asc, id asc"
+             from history{deleted_filter}"
         );
         let mut statement = connection
             .prepare(&query)

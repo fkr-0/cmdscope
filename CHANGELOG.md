@@ -40,6 +40,8 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html/)
   lexical symlink/mount-point scope semantics.
 - Kept mid-string query insertions incremental by narrowing from the previous
   fuzzy-match candidate set instead of rescanning the whole active scope.
+- Removed redundant SQLite-side history ordering so large database loads perform
+  the deterministic timestamp/ID sort only once in memory.
 
 ### Fixed
 

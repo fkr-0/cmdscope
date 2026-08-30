@@ -88,6 +88,38 @@ fn reports_missing_table_and_required_columns_clearly() {
 }
 
 #[test]
+fn unordered_sqlite_rows_are_sorted_chronologically_in_memory() {
+    let db = NamedTempFile::new().unwrap();
+    let connection = Connection::open(db.path()).unwrap();
+    connection
+        .execute_batch(
+            "create table history (
+                id text primary key,
+                timestamp integer not null,
+                duration integer not null,
+                exit integer not null,
+                command text not null,
+                cwd text not null,
+                session text not null,
+                hostname text not null
+            );
+            insert into history values ('late', 30, 0, 0, 'late command', '/repo', 's', 'h');
+            insert into history values ('early', 10, 0, 0, 'early command', '/repo', 's', 'h');
+            insert into history values ('middle', 20, 0, 0, 'middle command', '/repo', 's', 'h');",
+        )
+        .unwrap();
+
+    let store = HistoryStore::load_sqlite(db.path()).unwrap();
+    let ids = store
+        .entries()
+        .iter()
+        .map(|entry| entry.id.as_str())
+        .collect::<Vec<_>>();
+
+    assert_eq!(ids, vec!["early", "middle", "late"]);
+}
+
+#[test]
 fn equal_timestamps_have_deterministic_id_order() {
     let db = NamedTempFile::new().unwrap();
     let connection = Connection::open(db.path()).unwrap();

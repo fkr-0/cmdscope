@@ -291,8 +291,9 @@ missing required columns, and incompatible row values produce path-qualified
 diagnostics. A short SQLite busy timeout tolerates brief concurrent writer
 transactions without changing the database.
 
-Rows are ordered by timestamp and then ID, giving deterministic results and
-context windows when multiple commands share a timestamp.
+Rows are ordered once in memory by timestamp and then ID, giving deterministic
+results and context windows when multiple commands share a timestamp without
+asking SQLite to build a redundant temporary sort structure during load.
 
 ## Search performance
 
@@ -313,7 +314,14 @@ Run the reproducible comparison benchmark with:
 
 The benchmark runs both the former full-rescan/full-sort shape and the incremental engine over the same generated history and query sequence. Timing varies by machine; the emitted `scanned` counts are deterministic evidence of the work reduction.
 
-Reference run on July 26, 2026 with 100,000 rows:
+A separate real-database load check on August 30, 2026 used an Atuin 18.19.0
+database with 171,658 rows. Removing the redundant SQLite `ORDER BY` changed the
+query plan from an indexed scan plus a temporary B-tree to the indexed scan
+alone. Warm release-mode `--print-first` samples improved from 0.17–0.18 s to
+0.13 s; a cold sample improved from 0.47 s to 0.38 s. These wall-clock numbers
+are machine-specific, while the eliminated temporary sort is deterministic.
+
+Reference fuzzy-search run on July 26, 2026 with 100,000 rows:
 
 | Strategy | Ten-query sequence | Relative |
 | --- | ---: | ---: |
