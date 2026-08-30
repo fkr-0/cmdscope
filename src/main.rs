@@ -13,8 +13,8 @@ mod terminal;
 #[derive(Debug, Parser)]
 #[command(name = "cmdscope", version, about = "Interactive Atuin history picker")]
 struct Args {
-    #[arg(long, env = "CMDSCOPE_DB", default_value = "history.db")]
-    db: PathBuf,
+    #[arg(long, env = "CMDSCOPE_DB")]
+    db: Option<PathBuf>,
 
     #[arg(long, env = "CMDSCOPE_CONFIG")]
     config: Option<PathBuf>,
@@ -34,7 +34,8 @@ fn main() -> Result<()> {
         None => AppConfig::load_optional(default_config_path())?,
     };
     let keymap = config.compile_keymap()?;
-    let store = HistoryStore::load_sqlite(&args.db)?;
+    let db = args.db.unwrap_or_else(default_db_path);
+    let store = HistoryStore::load_sqlite(&db)?;
     if args.print_first {
         if let Some(entry) = store.search("", cmdscope::SearchMode::All, None, 1).first() {
             write_command(&entry.command, args.nul)?;
@@ -81,6 +82,25 @@ fn runtime_cwd_from(
         .map(|path| path.display().to_string())
 }
 
+fn default_db_path() -> PathBuf {
+    let local = PathBuf::from("history.db");
+    if local.exists() {
+        return local;
+    }
+
+    atuin_default_db_path(
+        env::var_os("XDG_DATA_HOME").map(PathBuf::from),
+        env::var_os("HOME").map(PathBuf::from),
+    )
+    .unwrap_or(local)
+}
+
+fn atuin_default_db_path(xdg_data_home: Option<PathBuf>, home: Option<PathBuf>) -> Option<PathBuf> {
+    xdg_data_home
+        .or_else(|| home.map(|home| home.join(".local/share")))
+        .map(|data_home| data_home.join("atuin/history.db"))
+}
+
 fn default_config_path() -> PathBuf {
     env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
@@ -104,7 +124,7 @@ fn detect_git_root() -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::runtime_cwd_from;
+    use super::{atuin_default_db_path, runtime_cwd_from};
     use std::path::PathBuf;
 
     #[test]
@@ -121,5 +141,25 @@ mod tests {
         let cwd = runtime_cwd_from(None, || Some(PathBuf::from("/physical/project")));
 
         assert_eq!(cwd.as_deref(), Some("/physical/project"));
+    }
+
+    #[test]
+    fn atuin_default_db_prefers_xdg_data_home() {
+        let path = atuin_default_db_path(
+            Some(PathBuf::from("/xdg/data")),
+            Some(PathBuf::from("/home/me")),
+        );
+
+        assert_eq!(path, Some(PathBuf::from("/xdg/data/atuin/history.db")));
+    }
+
+    #[test]
+    fn atuin_default_db_falls_back_to_home_local_share() {
+        let path = atuin_default_db_path(None, Some(PathBuf::from("/home/me")));
+
+        assert_eq!(
+            path,
+            Some(PathBuf::from("/home/me/.local/share/atuin/history.db"))
+        );
     }
 }

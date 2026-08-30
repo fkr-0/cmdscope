@@ -19,6 +19,8 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html/)
   the single-line search field.
 - Added opt-in NUL-terminated selected-command output with shell bindings that
   preserve trailing newline bytes in Bash, Zsh, and Fish editing buffers.
+- Added XDG-aware discovery of Atuin's standard history database when neither an
+  explicit database nor an existing compatibility `./history.db` is selected.
 - Added robustness coverage for long and Unicode commands, shell metacharacter
   queries, high-cardinality fuzzy matches, directory boundaries, chronological
   context across sessions, and shell-safe selected-command output.

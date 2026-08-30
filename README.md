@@ -43,7 +43,16 @@ Build the binary:
 
     cargo build
 
-Run against a local history database:
+Run with automatic database discovery:
+
+    cmdscope
+
+Without `--db` or `CMDSCOPE_DB`, Cmdscope keeps the historical `./history.db`
+behavior when that path exists. Otherwise it follows Atuin's standard data
+location: `$XDG_DATA_HOME/atuin/history.db`, or
+`$HOME/.local/share/atuin/history.db` when `XDG_DATA_HOME` is unset.
+
+Run against an explicit local history database:
 
     cargo run -- --db ./history.db
 
@@ -55,9 +64,9 @@ Print the installed version:
 
     cmdscope --version
 
-Use an Atuin database directly:
+Override database discovery explicitly when needed:
 
-    CMDSCOPE_DB="$HOME/.local/share/atuin/history.db" cmdscope
+    CMDSCOPE_DB="/path/to/atuin/history.db" cmdscope
 
 Use a custom config file:
 
