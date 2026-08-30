@@ -96,6 +96,17 @@ fn incremental_edits_match_a_fresh_full_rescan() {
 }
 
 #[test]
+fn inserting_inside_query_matches_a_fresh_full_rescan() {
+    let store = store();
+    let mut engine = SearchEngine::new(store.clone(), 37);
+
+    engine.set_query("ct");
+    engine.set_query("cat");
+
+    assert_eq!(engine.results(), reference(&store, "cat", 37));
+}
+
+#[test]
 fn empty_store_and_zero_result_limit_are_safe() {
     let mut empty = SearchEngine::new(HistoryStore::from_entries(Vec::new()), 200);
     empty.set_query("anything");

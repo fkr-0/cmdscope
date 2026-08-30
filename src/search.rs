@@ -11,6 +11,13 @@ struct QueryLayer {
     ranked: Vec<usize>,
 }
 
+fn query_is_extension(current: &str, next: &str) -> bool {
+    let mut next_characters = next.chars();
+    current
+        .chars()
+        .all(|character| next_characters.by_ref().any(|next| next == character))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -61,9 +68,8 @@ pub struct SearchStats {
 /// responsiveness techniques that matter in an interactive picker:
 ///
 /// - a scope index is built only when scope changes;
-/// - extending a query scans only the previous query's matches;
-///
-/// - backspacing restores a cached prefix layer without rescanning;
+/// - adding characters anywhere in a query scans only the previous query's matches;
+/// - backspacing restores a cached query layer without rescanning;
 /// - a bounded heap ranks only the best visible results instead of sorting all
 ///   matches;
 /// - results are history indices, so no command strings are cloned per key.
@@ -129,8 +135,8 @@ impl SearchEngine {
             return;
         }
 
-        let extends_current = query.starts_with(current);
-        if !extends_current {
+        let narrows_current = query_is_extension(current, query);
+        if !narrows_current {
             self.layers.truncate(1);
         }
         let source = &self.layers.last().expect("base query layer").candidates;

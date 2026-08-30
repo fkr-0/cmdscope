@@ -39,6 +39,20 @@ fn extending_query_only_scans_previous_matches() {
 }
 
 #[test]
+fn inserting_inside_query_only_scans_previous_matches() {
+    let mut engine = SearchEngine::new(large_store(20_000), 200);
+    engine.set_scope(SearchScope::global());
+
+    engine.set_query("ct");
+    let before_insert = engine.stats();
+    engine.set_query("cat");
+    let after_insert = engine.stats();
+
+    assert_eq!(after_insert.scanned, before_insert.matched);
+    assert!(after_insert.scanned < after_insert.scope_candidates);
+}
+
+#[test]
 fn backspace_restores_cached_prefix_without_rescanning() {
     let mut engine = SearchEngine::new(large_store(20_000), 200);
     engine.set_query("c");
