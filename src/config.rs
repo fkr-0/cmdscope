@@ -1,8 +1,7 @@
-use crate::columns::ColumnId;
-use crate::keymap::KeyMap;
+use crate::{action::Action, columns::ColumnId, keymap::KeyMap};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Deserializer};
-use std::{io::ErrorKind, path::Path};
+use std::{collections::BTreeMap, io::ErrorKind, path::Path};
 
 fn one_or_many<'de, D>(deserializer: D) -> std::result::Result<Vec<String>, D::Error>
 where
@@ -19,6 +18,27 @@ where
         Value::One(value) => vec![value],
         Value::Many(values) => values,
     })
+}
+
+fn validate_action(action: &Action, config: &UiConfig) -> Result<()> {
+    match action {
+        Action::Menu(name) if !config.menus.contains_key(name) => {
+            anyhow::bail!("unknown menu reference {name:?}")
+        }
+        Action::Window(name)
+            if !config.windows.contains_key(name)
+                && !matches!(
+                    name.as_str(),
+                    "inspect" | "location" | "timeline" | "preview"
+                ) =>
+        {
+            anyhow::bail!("unknown window reference {name:?}")
+        }
+        Action::Wrap(name) if !config.wraps.contains_key(name) => {
+            anyhow::bail!("unknown wrap reference {name:?}")
+        }
+        _ => Ok(()),
+    }
 }
 
 fn binding(value: &str) -> Vec<String> {
@@ -191,6 +211,8 @@ pub struct ColumnConfig {
     pub date_format: DateFormat,
     #[serde(default = "default_column_min_width")]
     pub min_width: usize,
+    #[serde(default)]
+    pub order: Vec<ColumnId>,
 }
 
 impl Default for ColumnConfig {
@@ -202,6 +224,12 @@ impl Default for ColumnConfig {
             duration: false,
             date_format: DateFormat::Relative,
             min_width: 12,
+            order: vec![
+                ColumnId::Date,
+                ColumnId::Pwd,
+                ColumnId::Exit,
+                ColumnId::Duration,
+            ],
         }
     }
 }
@@ -217,8 +245,15 @@ fn default_column_min_width() -> usize {
 }
 
 impl ColumnConfig {
+    pub fn validate(&self) -> Result<()> {
+        if self.min_width < 4 {
+            anyhow::bail!("column min_width must be at least 4");
+        }
+        Ok(())
+    }
+
     pub fn visible(&self) -> Vec<ColumnId> {
-        [
+        let enabled = [
             self.date.then_some(ColumnId::Date),
             self.pwd.then_some(ColumnId::Pwd),
             self.exit.then_some(ColumnId::Exit),
@@ -226,7 +261,31 @@ impl ColumnConfig {
         ]
         .into_iter()
         .flatten()
-        .collect()
+        .collect::<std::collections::HashSet<_>>();
+        let mut order = if self.order.is_empty() {
+            vec![
+                ColumnId::Date,
+                ColumnId::Pwd,
+                ColumnId::Exit,
+                ColumnId::Duration,
+            ]
+        } else {
+            self.order.clone()
+        };
+        for column in [
+            ColumnId::Date,
+            ColumnId::Pwd,
+            ColumnId::Exit,
+            ColumnId::Duration,
+        ] {
+            if !order.contains(&column) {
+                order.push(column);
+            }
+        }
+        order
+            .into_iter()
+            .filter(|column| enabled.contains(column))
+            .collect()
     }
 }
 
@@ -243,11 +302,139 @@ pub struct UiConfig {
     pub columns: ColumnConfig,
     #[serde(default = "default_preview")]
     pub preview: bool,
+    #[serde(default)]
+    pub column: BTreeMap<ColumnId, ColumnPresentation>,
+    #[serde(default)]
+    pub menus: BTreeMap<String, MenuConfig>,
+    #[serde(default)]
+    pub windows: BTreeMap<String, WindowConfig>,
+    #[serde(default)]
+    pub wraps: BTreeMap<String, WrapConfig>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ColumnPresentation {
+    #[serde(default)]
+    pub width: Option<usize>,
+    #[serde(default)]
+    pub min_width: Option<usize>,
+    #[serde(default)]
+    pub max_width: Option<usize>,
+    #[serde(default)]
+    pub align: Alignment,
+    #[serde(default)]
+    pub truncation: Truncation,
+    #[serde(default = "default_column_priority")]
+    pub priority: u8,
+}
+
+impl Default for ColumnPresentation {
+    fn default() -> Self {
+        Self {
+            width: None,
+            min_width: None,
+            max_width: None,
+            align: Alignment::Left,
+            truncation: Truncation::End,
+            priority: 100,
+        }
+    }
+}
+fn default_column_priority() -> u8 {
+    100
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum Alignment {
+    #[default]
+    Left,
+    Center,
+    Right,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum Truncation {
+    #[default]
+    End,
+    Start,
+    None,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WrapConfig {
+    pub template: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MenuItemConfig {
+    pub label: String,
+    #[serde(default)]
+    pub key: Option<String>,
+    pub action: Action,
+    #[serde(default)]
+    pub on_select: Vec<Action>,
+    #[serde(default)]
+    pub on_leave: Vec<Action>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MenuConfig {
+    #[serde(default)]
+    pub name: String,
+    pub items: Vec<MenuItemConfig>,
+    #[serde(default = "default_menu_confirm", deserialize_with = "one_or_many")]
+    pub confirm: Vec<String>,
+    #[serde(default = "default_menu_next", deserialize_with = "one_or_many")]
+    pub next: Vec<String>,
+    #[serde(default = "default_menu_previous", deserialize_with = "one_or_many")]
+    pub previous: Vec<String>,
+    #[serde(default = "default_menu_cancel", deserialize_with = "one_or_many")]
+    pub cancel: Vec<String>,
+    #[serde(default)]
+    pub on_open: Vec<Action>,
+    #[serde(default)]
+    pub on_leave: Vec<Action>,
+}
+fn default_menu_confirm() -> Vec<String> {
+    vec!["enter".into()]
+}
+fn default_menu_next() -> Vec<String> {
+    vec!["down".into(), "j".into()]
+}
+fn default_menu_previous() -> Vec<String> {
+    vec!["up".into(), "k".into()]
+}
+fn default_menu_cancel() -> Vec<String> {
+    vec!["esc".into()]
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WindowConfig {
+    pub kind: String,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub keymap: BTreeMap<String, String>,
+    #[serde(default)]
+    pub width: Option<u16>,
+    #[serde(default)]
+    pub height: Option<u16>,
+    #[serde(default)]
+    pub on_open: Vec<Action>,
+    #[serde(default)]
+    pub on_close: Vec<Action>,
 }
 
 impl UiConfig {
     pub fn effective_columns(&self) -> ColumnConfig {
-        if self.columns == ColumnConfig::default()
+        let mut columns = if self.columns == ColumnConfig::default()
             && self.history_columns != default_history_columns()
         {
             ColumnConfig {
@@ -257,7 +444,72 @@ impl UiConfig {
             }
         } else {
             self.columns.clone()
+        };
+        if columns.order.is_empty() {
+            columns.order = vec![
+                ColumnId::Date,
+                ColumnId::Pwd,
+                ColumnId::Exit,
+                ColumnId::Duration,
+            ];
         }
+        columns
+    }
+
+    pub fn presentation(&self, column: ColumnId) -> ColumnPresentation {
+        self.column.get(&column).cloned().unwrap_or_default()
+    }
+
+    pub fn compile_menus(&self) -> Result<BTreeMap<String, crate::menu::Menu>> {
+        let mut menus = BTreeMap::new();
+        for (name, config) in &self.menus {
+            let mut config = config.clone();
+            if config.name.is_empty() {
+                config.name = name.clone();
+            }
+            menus.insert(name.clone(), crate::menu::Menu::from_config(&config)?);
+        }
+        Ok(menus)
+    }
+
+    pub fn validate_references(&self) -> Result<()> {
+        self.columns.validate()?;
+        for (name, menu) in &self.menus {
+            for item in &menu.items {
+                validate_action(&item.action, self).with_context(|| format!("menu {name:?}"))?;
+                for action in item.on_select.iter().chain(item.on_leave.iter()) {
+                    validate_action(action, self).with_context(|| format!("menu {name:?}"))?;
+                }
+            }
+            for action in menu.on_open.iter().chain(menu.on_leave.iter()) {
+                validate_action(action, self).with_context(|| format!("menu {name:?}"))?;
+            }
+            for binding in menu
+                .confirm
+                .iter()
+                .chain(menu.next.iter())
+                .chain(menu.previous.iter())
+                .chain(menu.cancel.iter())
+            {
+                binding
+                    .parse::<crate::KeyChord>()
+                    .with_context(|| format!("menu {name:?} binding {binding:?}"))?;
+            }
+        }
+        for (name, window) in &self.windows {
+            if !matches!(window.kind.as_str(), "location" | "timeline" | "preview") {
+                anyhow::bail!("window {name:?} has unsupported kind {:?}", window.kind);
+            }
+            for binding in window.keymap.values() {
+                binding
+                    .parse::<crate::KeyChord>()
+                    .with_context(|| format!("window {name:?} binding {binding:?}"))?;
+            }
+            for action in window.on_open.iter().chain(window.on_close.iter()) {
+                validate_action(action, self).with_context(|| format!("window {name:?}"))?;
+            }
+        }
+        Ok(())
     }
 }
 
@@ -267,6 +519,10 @@ impl Default for UiConfig {
             history_columns: default_history_columns(),
             columns: ColumnConfig::default(),
             preview: true,
+            column: BTreeMap::new(),
+            menus: BTreeMap::new(),
+            windows: BTreeMap::new(),
+            wraps: BTreeMap::new(),
         }
     }
 }

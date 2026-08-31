@@ -1,3 +1,4 @@
+[keys]
 global = "ctrl-g"
 pwd = "ctrl-p"
 git_root = "ctrl-r"
@@ -29,9 +30,7 @@ cursor_end = ["end", "ctrl-e"]
 mode = "subdirs"
 
 [ui]
-# Legacy metadata list remains accepted for compatibility.
 history_columns = ["date", "pwd"]
-# Persistent preview is shown on sufficiently large terminals.
 preview = true
 
 [ui.columns]
@@ -39,5 +38,102 @@ date = true
 pwd = true
 exit = false
 duration = false
-date_format = "relative" # relative, relative_long, date, datetime, datetime_seconds, iso8601, epoch
+order = ["date", "pwd", "duration", "exit"]
+date_format = "relative"
 min_width = 12
+
+[ui.column.date]
+min_width = 8
+max_width = 10
+align = "right"
+truncation = "end"
+priority = 10
+
+[ui.column.pwd]
+width = 28
+min_width = 10
+max_width = 36
+align = "left"
+truncation = "start"
+priority = 20
+
+[ui.column.duration]
+width = 8
+align = "right"
+truncation = "end"
+priority = 50
+
+[ui.column.exit]
+width = 6
+align = "right"
+truncation = "end"
+priority = 60
+
+[ui.menus.actions]
+confirm = "enter"
+next = ["down", "j"]
+previous = ["up", "k"]
+cancel = "esc"
+[[ui.menus.actions.items]]
+label = "insert + exit"
+action = "insert+exit"
+[[ui.menus.actions.items]]
+label = "append"
+action = "append"
+[[ui.menus.actions.items]]
+label = "append + exit"
+action = "append+exit"
+[[ui.menus.actions.items]]
+label = "&& append"
+action = "&&append"
+[[ui.menus.actions.items]]
+label = "|| append"
+action = "||append"
+[[ui.menus.actions.items]]
+label = "append / wrap →"
+action = "menu:wrap"
+[[ui.menus.actions.items]]
+label = "inspect →"
+action = "menu:inspect"
+
+[ui.menus.wrap]
+[[ui.menus.wrap.items]]
+label = "2>&1"
+action = "wrap:stderr"
+[[ui.menus.wrap.items]]
+label = "2>&1 > /dev/null"
+action = "wrap:suppress"
+[[ui.menus.wrap.items]]
+label = "| tee -a …"
+action = "wrap:tee"
+
+[ui.menus.inspect]
+[[ui.menus.inspect.items]]
+label = "location"
+action = "window:location"
+[[ui.menus.inspect.items]]
+label = "timeline"
+action = "window:timeline"
+
+[ui.windows.location]
+kind = "location"
+title = " Location · previous / selected / next "
+[ui.windows.location.keymap]
+close = "esc"
+[ui.windows.timeline]
+kind = "timeline"
+title = " Timeline · previous / selected / next "
+[ui.windows.timeline.keymap]
+close = "esc"
+[ui.windows.preview]
+kind = "preview"
+title = " Preview "
+[ui.windows.preview.keymap]
+close = "esc"
+
+[ui.wraps.stderr]
+template = "{command} 2>&1"
+[ui.wraps.suppress]
+template = "{command} 2>&1 > /dev/null"
+[ui.wraps.tee]
+template = "{command} | tee -a {query}"

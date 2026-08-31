@@ -186,6 +186,22 @@ impl SearchEngine {
         Some(scoped[start..end].to_vec())
     }
 
+    pub fn context_around_index_with_scope(
+        &self,
+        selected_index: usize,
+        radius: usize,
+        scope: &SearchScope,
+    ) -> Option<Vec<usize>> {
+        let scoped = self.store.indices_for_scope(scope);
+        let position = scoped.binary_search(&selected_index).ok()?;
+        let start = position.saturating_sub(radius);
+        let end = position
+            .saturating_add(radius)
+            .saturating_add(1)
+            .min(scoped.len());
+        Some(scoped[start..end].to_vec())
+    }
+
     fn reset_scope(&mut self) {
         let candidates = self.store.indices_for_scope(&self.scope);
         let ranked = candidates

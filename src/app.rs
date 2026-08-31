@@ -1,9 +1,10 @@
 use crate::{
     Action, ColumnId, HistoryEntry, HistoryStore, KeyAction, PwdMatchMode, SearchEngine,
     SearchMode, SearchScope, SearchStats,
-    config::ColumnConfig,
+    config::{ColumnConfig, WindowConfig, WrapConfig},
     menu::{Menu, default_actions_menu},
 };
+use std::collections::BTreeMap;
 
 /// Pure update messages accepted by [`AppModel::update`].
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -34,8 +35,18 @@ pub enum Msg {
     TogglePwd,
     ToggleExit,
     ToggleDuration,
+    OpenLocation,
+    OpenTimeline,
     Accept,
     Quit,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModalKey {
+    Confirm,
+    Next,
+    Previous,
+    Cancel,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -96,6 +107,11 @@ pub struct AppModel {
     should_quit: bool,
     query_error: Option<String>,
     accepted_command: Option<String>,
+    menus: BTreeMap<String, Menu>,
+    menu_stack: Vec<Menu>,
+    active_window: Option<String>,
+    windows: BTreeMap<String, WindowConfig>,
+    wraps: BTreeMap<String, WrapConfig>,
 }
 
 impl AppModel {
@@ -113,6 +129,18 @@ impl AppModel {
         let mut model = Self::new_with_environment(store, current_pwd, git_root, pwd_match_mode);
         model.columns = config.clone();
         model
+    }
+
+    pub fn configure_interactions(&mut self, menus: BTreeMap<String, Menu>) {
+        self.menus = menus;
+    }
+
+    pub fn configure_windows(&mut self, windows: BTreeMap<String, WindowConfig>) {
+        self.windows = windows;
+    }
+
+    pub fn configure_wraps(&mut self, wraps: BTreeMap<String, WrapConfig>) {
+        self.wraps = wraps;
     }
 
     pub fn new_with_environment(
@@ -142,6 +170,11 @@ impl AppModel {
             should_quit: false,
             query_error: None,
             accepted_command: None,
+            menus: BTreeMap::new(),
+            menu_stack: Vec::new(),
+            active_window: None,
+            windows: BTreeMap::new(),
+            wraps: BTreeMap::new(),
         }
     }
 
@@ -312,11 +345,19 @@ impl AppModel {
                 }
             }
             Msg::ToggleMetadata => self.metadata_visible = !self.metadata_visible,
-            Msg::OpenActions => self.actions_menu = Some(default_actions_menu()),
+            Msg::OpenActions => {
+                if self.menus.contains_key("actions") {
+                    self.open_named_menu("actions");
+                } else {
+                    self.actions_menu = Some(default_actions_menu());
+                }
+            }
             Msg::ToggleDate => self.columns.date = !self.columns.date,
             Msg::TogglePwd => self.columns.pwd = !self.columns.pwd,
             Msg::ToggleExit => self.columns.exit = !self.columns.exit,
             Msg::ToggleDuration => self.columns.duration = !self.columns.duration,
+            Msg::OpenLocation => self.open_window("location"),
+            Msg::OpenTimeline => self.open_window("timeline"),
             Msg::Accept => {
                 self.accepted_command = self.selected().map(|entry| entry.command.clone());
                 self.should_quit = true;
@@ -468,29 +509,97 @@ impl AppModel {
     }
 
     pub fn actions_menu(&self) -> Option<&Menu> {
-        self.actions_menu.as_ref()
+        self.menu_stack.last().or(self.actions_menu.as_ref())
     }
 
     pub fn actions_menu_mut(&mut self) -> Option<&mut Menu> {
-        self.actions_menu.as_mut()
+        self.menu_stack.last_mut().or(self.actions_menu.as_mut())
     }
 
     pub fn close_actions_menu(&mut self) {
+        self.menu_stack.clear();
         self.actions_menu = None;
+        self.active_window = None;
     }
 
     pub fn modal_open(&self) -> bool {
-        self.actions_menu.is_some()
+        self.actions_menu.is_some() || !self.menu_stack.is_empty() || self.active_window.is_some()
+    }
+
+    pub fn open_named_menu(&mut self, name: &str) {
+        if let Some(menu) = self.menus.get(name).cloned() {
+            let hooks = menu.on_open.clone();
+            self.menu_stack.push(menu);
+            self.actions_menu = None;
+            self.run_lifecycle_actions(&hooks);
+        }
+    }
+
+    pub fn open_window(&mut self, name: &str) {
+        if let Some(window) = self.windows.get(name) {
+            let hooks = window.on_open.clone();
+            self.active_window = Some(name.to_owned());
+            self.menu_stack.clear();
+            self.actions_menu = None;
+            self.run_lifecycle_actions(&hooks);
+        } else if matches!(name, "location" | "timeline" | "preview" | "inspect") {
+            self.active_window = Some(name.to_owned());
+            self.menu_stack.clear();
+            self.actions_menu = None;
+        }
+    }
+
+    pub fn active_window(&self) -> Option<&str> {
+        self.active_window.as_deref()
+    }
+
+    pub fn active_window_config(&self) -> Option<&WindowConfig> {
+        self.active_window
+            .as_ref()
+            .and_then(|name| self.windows.get(name))
+    }
+
+    pub fn close_modal(&mut self) {
+        if let Some(menu) = self.menu_stack.pop() {
+            let hooks = menu.on_leave.clone();
+            self.run_lifecycle_actions(&hooks);
+            return;
+        }
+        if let Some(name) = self.active_window.take() {
+            if let Some(window) = self.windows.get(&name) {
+                let hooks = window.on_close.clone();
+                self.run_lifecycle_actions(&hooks);
+            }
+            return;
+        }
+        self.actions_menu = None;
+    }
+
+    fn run_lifecycle_actions(&mut self, actions: &[Action]) {
+        for action in actions {
+            match action {
+                Action::Menu(name) => self.open_named_menu(name),
+                Action::Window(name) => self.open_window(name),
+                Action::Wrap(_)
+                | Action::InsertExit
+                | Action::Append
+                | Action::AppendExit
+                | Action::AndAppend
+                | Action::OrAppend => {}
+            }
+        }
     }
 
     pub fn execute_menu_action(&mut self) {
-        let Some(menu) = self.actions_menu.as_ref() else {
+        let Some(menu) = self.menu_stack.last().or(self.actions_menu.as_ref()) else {
             return;
         };
         let Some(item) = menu.selected_item() else {
             return;
         };
+        let on_select = item.on_select.clone();
         let action = item.action.clone();
+        self.run_lifecycle_actions(&on_select);
         match action {
             Action::InsertExit => {
                 self.accepted_command = self.selected().map(|entry| entry.command.clone());
@@ -517,8 +626,45 @@ impl AppModel {
                     self.should_quit = true;
                 }
             }
-            Action::Menu(_) | Action::Window(_) | Action::Wrap(_) => {}
+            Action::Menu(name) => self.open_named_menu(&name),
+            Action::Window(name) => self.open_window(&name),
+            Action::Wrap(name) => {
+                if let Some(entry) = self.selected()
+                    && let Some(template) = self.wraps.get(&name)
+                {
+                    let composed = template
+                        .template
+                        .replace("{command}", &entry.command)
+                        .replace("{query}", &self.query);
+                    self.accepted_command = Some(composed);
+                    self.should_quit = true;
+                }
+            }
         }
+    }
+
+    pub fn inspect_entries(&self, kind: &str) -> Vec<&HistoryEntry> {
+        let Some(&selected_index) = self.visible.get(self.selected_index) else {
+            return Vec::new();
+        };
+        let scope = if kind == "location" {
+            SearchScope::pwd(
+                self.selected().map(|entry| entry.cwd.as_str()),
+                self.pwd_match_mode,
+            )
+        } else {
+            SearchScope::global()
+        };
+        self.search
+            .context_around_index_with_scope(selected_index, 3, &scope)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|index| self.search.entry(index))
+            .collect()
+    }
+
+    pub fn menu_stack_len(&self) -> usize {
+        self.menu_stack.len()
     }
 
     pub fn query_error(&self) -> Option<&str> {

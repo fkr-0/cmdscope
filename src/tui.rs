@@ -1,3 +1,4 @@
+use crate::config::{Alignment as ConfigAlignment, Truncation as ConfigTruncation};
 use crate::{AppConfig, AppModel, ColumnId, HistoryEntry, SearchMode};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout},
@@ -25,6 +26,68 @@ enum Compactness {
     Ultra,
     Compact,
     Full,
+}
+
+fn render_active_window(model: &AppModel, area: Rect, buf: &mut Buffer) {
+    let Some(name) = model.active_window() else {
+        return;
+    };
+    let kind = model
+        .active_window_config()
+        .map(|window| window.kind.as_str())
+        .unwrap_or(name);
+    let Some(selected) = model.selected() else {
+        return;
+    };
+    let width = model
+        .active_window_config()
+        .and_then(|window| window.width)
+        .unwrap_or(72)
+        .min(area.width.saturating_sub(4));
+    let height = model
+        .active_window_config()
+        .and_then(|window| window.height)
+        .unwrap_or(14)
+        .min(area.height.saturating_sub(2));
+    if width < 24 || height < 5 {
+        return;
+    }
+    let popup = Rect::new(
+        area.x + (area.width - width) / 2,
+        area.y + (area.height - height) / 2,
+        width,
+        height,
+    );
+    Clear.render(popup, buf);
+    let title = model
+        .active_window_config()
+        .and_then(|window| window.title.clone())
+        .unwrap_or_else(|| format!(" {name} "));
+    let mut lines = Vec::new();
+    let selected_id = selected.id.as_str();
+    for entry in model.inspect_entries(kind) {
+        let marker = if entry.id == selected_id { "> " } else { "  " };
+        let date = crate::columns::format_column(
+            entry,
+            ColumnId::Date,
+            model.columns(),
+            current_unix_seconds(),
+        );
+        let command = truncate_end_to_width(
+            display_text(&entry.command).as_ref(),
+            usize::from(width).saturating_sub(15),
+        );
+        lines.push(Line::from(format!("{marker}{date:>8}  {command}")));
+    }
+    Paragraph::new(lines)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .title(title),
+        )
+        .wrap(Wrap { trim: false })
+        .render(popup, buf);
 }
 
 /// Render a complete `cmdscope` frame into a Ratatui buffer.
@@ -76,6 +139,7 @@ pub fn render(
             render_history(model, config, chunks[2], buf, compactness);
             let cursor = render_input(model, chunks[3], buf);
             render_actions_menu(model, area, buf);
+            render_active_window(model, area, buf);
             cursor
         }
         Compactness::Full => {
@@ -87,6 +151,7 @@ pub fn render(
                 render_preview(model, chunks[4], buf);
             }
             render_actions_menu(model, area, buf);
+            render_active_window(model, area, buf);
             cursor
         }
     }
@@ -278,7 +343,7 @@ fn render_history(
     let now = current_unix_seconds();
     let items = model
         .visible()
-        .map(|entry| history_item(entry, model, &config.ui.columns, now, content_width))
+        .map(|entry| history_item(entry, model, config, now, content_width))
         .collect::<Vec<_>>();
     let list = List::new(items).highlight_symbol("> ").highlight_style(
         Style::default()
@@ -507,7 +572,7 @@ fn primary_binding(bindings: &[String]) -> &str {
 fn history_item(
     entry: &HistoryEntry,
     model: &AppModel,
-    columns: &crate::config::ColumnConfig,
+    config: &AppConfig,
     now: i64,
     content_width: usize,
 ) -> ListItem<'static> {
@@ -522,26 +587,74 @@ fn history_item(
     let prefix_width = 2;
 
     let mut metadata = Vec::<(String, Style)>::new();
-    let mut metadata_width = 0;
-    for column in columns.visible() {
+    let mut rendered_columns = Vec::new();
+    for column in model.columns().visible() {
         if !model.column_visible(column) || (content_width < 60 && column == ColumnId::Pwd) {
             continue;
         }
-        let value = match column {
+        let presentation = config.ui.presentation(column);
+        let raw = match column {
             ColumnId::Date | ColumnId::Duration => {
-                crate::columns::format_column(entry, column, columns, now)
+                crate::columns::format_column(entry, column, &config.ui.effective_columns(), now)
             }
-            ColumnId::Pwd => truncate_start_to_width(display_text(&entry.cwd).as_ref(), 28),
-            ColumnId::Exit => format!("exit {}", entry.exit),
+            ColumnId::Pwd => display_text(&entry.cwd).into_owned(),
+            ColumnId::Exit => entry.exit.to_string(),
         };
-        let width = UnicodeWidthStr::width(value.as_str());
-        let required = 2 + width;
-        if content_width.saturating_sub(prefix_width + metadata_width + required)
-            >= MIN_COMMAND_WIDTH
-        {
-            metadata_width += required;
-            metadata.push((value, Style::default().fg(Color::DarkGray)));
+        let mut width = presentation
+            .width
+            .unwrap_or_else(|| UnicodeWidthStr::width(raw.as_str()))
+            .max(presentation.min_width.unwrap_or(0));
+        if let Some(max_width) = presentation.max_width {
+            width = width.min(max_width);
         }
+        if width == 0 {
+            continue;
+        }
+        let rendered = match presentation.truncation {
+            ConfigTruncation::End => crate::columns::truncate_end(&raw, width),
+            ConfigTruncation::Start => crate::columns::truncate_start(&raw, width),
+            ConfigTruncation::None if UnicodeWidthStr::width(raw.as_str()) <= width => raw,
+            ConfigTruncation::None => continue,
+        };
+        let rendered_width = UnicodeWidthStr::width(rendered.as_str());
+        let text = match presentation.align {
+            ConfigAlignment::Left => format!("{rendered:<width$}"),
+            ConfigAlignment::Right => format!("{rendered:>width$}"),
+            ConfigAlignment::Center => {
+                let padding = width.saturating_sub(rendered_width);
+                format!(
+                    "{}{}{}",
+                    " ".repeat(padding / 2),
+                    rendered,
+                    " ".repeat(padding - padding / 2)
+                )
+            }
+        };
+        rendered_columns.push((presentation.priority, width, text));
+    }
+    while rendered_columns
+        .iter()
+        .map(|(_, width, _)| width + 2)
+        .sum::<usize>()
+        + prefix_width
+        + MIN_COMMAND_WIDTH
+        > content_width
+    {
+        let Some((index, _)) = rendered_columns
+            .iter()
+            .enumerate()
+            .max_by_key(|(index, (priority, _, _))| (*priority, *index))
+        else {
+            break;
+        };
+        rendered_columns.remove(index);
+    }
+    let metadata_width = rendered_columns
+        .iter()
+        .map(|(_, width, _)| width + 2)
+        .sum::<usize>();
+    for (_, _, text) in rendered_columns {
+        metadata.push((text, Style::default().fg(Color::DarkGray)));
     }
 
     let command_width = content_width.saturating_sub(prefix_width + metadata_width);

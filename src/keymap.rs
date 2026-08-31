@@ -68,7 +68,7 @@ impl KeyAction {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-enum ChordCode {
+pub enum ChordCode {
     Char(char),
     Enter,
     Esc,
@@ -94,6 +94,10 @@ pub struct KeyChord {
 }
 
 impl KeyChord {
+    pub fn matches_event(&self, event: KeyEvent) -> bool {
+        Self::from_event(event).is_some_and(|other| other == *self)
+    }
+
     pub fn from_event(event: KeyEvent) -> Option<Self> {
         if event
             .modifiers

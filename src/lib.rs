@@ -23,13 +23,14 @@ pub mod search;
 pub mod tui;
 
 pub use action::{Action, ActionContext};
-pub use app::{AppModel, Msg};
+pub use app::{AppModel, ModalKey, Msg};
 pub use columns::ColumnId;
 pub use config::{
     AppConfig, ColumnConfig, DateFormat, HistoryColumn, KeyConfig, PwdConfig, UiConfig,
 };
 pub use history::{HistoryEntry, HistoryStore};
 pub use keymap::{KeyAction, KeyChord, KeyMap};
+pub use live::LiveHistory;
 pub use query::{QueryPlan, QueryStage};
 pub use scope::{PwdMatchMode, SearchMode, SearchScope};
 pub use search::{SearchEngine, SearchStats};

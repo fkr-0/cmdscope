@@ -5,6 +5,25 @@ All notable changes to this project are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html/).
 
+## [0.2.3] - 2026-08-31
+
+### Added
+
+- Added fully configurable column ordering, widths, alignment, truncation, and responsive priorities.
+- Added TOML-defined menus, nested submenu navigation, lifecycle hooks, local keymaps, and dedicated location/timeline inspection windows.
+- Added composable wrap templates and deterministic SQLite live-refresh integration coverage for insert, update, soft-delete, and selection disappearance.
+
+### Changed
+
+- Bumped the patch release from `0.2.2` to `0.2.3`.
+- Preserved the optimized ordinary fuzzy-search fast path while staged query filters narrow candidate streams.
+- Made modal key precedence explicit: active menu, active window, base semantic keymap, with text input suppressed while a modal is active.
+
+### Fixed
+
+- Configured action names now fail closed instead of silently becoming `insert+exit`.
+- Live refresh preserves stable selected history identity when possible and falls back deterministically when it disappears.
+
 ## [Unreleased]
 
 ### Added

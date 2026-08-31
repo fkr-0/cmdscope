@@ -420,7 +420,19 @@ Queries retain the normal fuzzy matcher and may add explicit stages. Quoted stag
 
 When Cmdscope has a real SQLite history path, the TUI watches its metadata without a busy loop. Changes are picked up during idle periods at a bounded cadence, query text remains intact, and the selected history identity is retained across refreshes when it still exists. Failed transient reads are ignored until the next observation rather than replacing a good snapshot with partial data.
 
-The current slice intentionally keeps the existing `context` inspector and persistent preview instead of duplicating them as a second subsystem. Configuration-defined menus/windows, richer wrap-template registries, and full responsive column ordering/width schemas remain follow-up work rather than inert compatibility shims.
+The current release extends the existing context inspector and persistent preview with configuration-defined menus/windows, nested navigation, wrap templates, and responsive column presentation without replacing the history producer layer.
+
+## Next-generation configurable workspace
+
+The query and history results are the primary workspace. The default presentation is newest-first and keeps the query directly adjacent to the result list. Typed columns support configurable order, width/min/max width, alignment, truncation, and responsive priority.
+
+Named TOML menus support nested `menu:<name>` actions, item/menu lifecycle hooks, local confirm/navigation/cancel bindings, and explicit modal precedence. Named windows support `location`, `timeline`, and `preview`; the first two expose the selected command with nearby history context. Wrap templates compose `{command}` and `{query}` into shell text without executing it.
+
+The `#` query operator performs bounded candidate-stream subfiltering (`cargo#test`). Quoted stages are literal and `/pattern/` stages use Rust regex semantics, not PCRE compatibility.
+
+When using a real SQLite history path, the TUI performs bounded idle refreshes and preserves query and stable selection identity across complete snapshot reloads.
+
+See `examples.config.toml` for the complete columns/menu/window/wrap schema.
 
 ## Release builds
 

@@ -34,6 +34,8 @@ fn main() -> Result<()> {
         None => AppConfig::load_optional(default_config_path())?,
     };
     let keymap = config.compile_keymap()?;
+    config.ui.validate_references()?;
+    let menus = config.ui.compile_menus()?;
     let db = args.db.unwrap_or_else(default_db_path);
     let store = HistoryStore::load_sqlite(&db)?;
     if args.print_first {
@@ -45,8 +47,8 @@ fn main() -> Result<()> {
 
     let cwd = runtime_cwd();
     let git_root = detect_git_root();
-    let selected =
-        terminal::run_tui(store, cwd, git_root, config, keymap).context("terminal UI failed")?;
+    let selected = terminal::run_tui(store, cwd, git_root, config, keymap, menus)
+        .context("terminal UI failed")?;
     if let Some(command) = selected {
         write_command(&command, args.nul)?;
     }

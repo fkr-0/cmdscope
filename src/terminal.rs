@@ -1,6 +1,7 @@
 use anyhow::Result;
 use cmdscope::live::FileFingerprint;
-use cmdscope::{AppConfig, AppModel, HistoryStore, KeyMap, Msg, tui};
+use cmdscope::menu::Menu;
+use cmdscope::{AppConfig, AppModel, HistoryStore, KeyMap, ModalKey, Msg, tui};
 use crossterm::{
     event::{
         self, DisableBracketedPaste, EnableBracketedPaste, Event, KeyCode, KeyEvent, KeyEventKind,
@@ -11,6 +12,7 @@ use crossterm::{
 };
 use ratatui::{Terminal, backend::CrosstermBackend};
 use std::{
+    collections::BTreeMap,
     io,
     path::Path,
     time::{Duration, Instant},
@@ -21,6 +23,49 @@ type TuiTerminal = Terminal<CrosstermBackend<io::Stderr>>;
 struct TerminalSession {
     terminal: TuiTerminal,
     restored: bool,
+}
+
+fn modal_key(model: &AppModel, key: KeyEvent) -> Option<ModalKey> {
+    if let Some(menu) = model.actions_menu() {
+        if menu.cancel.iter().any(|binding| binding.matches_event(key)) {
+            return Some(ModalKey::Cancel);
+        }
+        if menu
+            .previous
+            .iter()
+            .any(|binding| binding.matches_event(key))
+        {
+            return Some(ModalKey::Previous);
+        }
+        if menu.next.iter().any(|binding| binding.matches_event(key)) {
+            return Some(ModalKey::Next);
+        }
+        if menu
+            .confirm
+            .iter()
+            .any(|binding| binding.matches_event(key))
+        {
+            return Some(ModalKey::Confirm);
+        }
+    }
+    if let Some(window) = model.active_window_config() {
+        for (name, binding) in &window.keymap {
+            if binding
+                .parse::<cmdscope::KeyChord>()
+                .ok()
+                .is_some_and(|chord| chord.matches_event(key))
+            {
+                return match name.as_str() {
+                    "cancel" | "close" => Some(ModalKey::Cancel),
+                    "previous" => Some(ModalKey::Previous),
+                    "next" => Some(ModalKey::Next),
+                    "confirm" => Some(ModalKey::Confirm),
+                    _ => None,
+                };
+            }
+        }
+    }
+    None
 }
 
 impl TerminalSession {
@@ -83,12 +128,16 @@ pub fn run_tui(
     git_root: Option<String>,
     config: AppConfig,
     keymap: KeyMap,
+    menus: BTreeMap<String, Menu>,
 ) -> Result<Option<String>> {
     let source_path = store.source_path().map(Path::to_path_buf);
     let effective_columns = config.ui.effective_columns();
     let mut session = TerminalSession::enter()?;
     let mut model =
         AppModel::new_with_config(store, cwd, git_root, &effective_columns, config.pwd.mode);
+    model.configure_interactions(menus);
+    model.configure_windows(config.ui.windows.clone());
+    model.configure_wraps(config.ui.wraps.clone());
 
     let result = run_event_loop(
         &mut session.terminal,
@@ -133,15 +182,16 @@ fn run_event_loop(
         match event::read()? {
             Event::Key(key) if matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) => {
                 if model.modal_open() {
-                    match key.code {
-                        KeyCode::Esc => model.close_actions_menu(),
-                        KeyCode::Up | KeyCode::Char('k') => model.handle_modal_previous(),
-                        KeyCode::Down | KeyCode::Char('j') | KeyCode::Tab => {
-                            model.handle_modal_next()
+                    match modal_key(model, key) {
+                        Some(ModalKey::Cancel) => model.close_modal(),
+                        Some(ModalKey::Previous) => model.handle_modal_previous(),
+                        Some(ModalKey::Next) => model.handle_modal_next(),
+                        Some(ModalKey::Confirm) => model.execute_menu_action(),
+                        None => {
+                            if let Some(action) = keymap.action_for(key) {
+                                model.update(Msg::from(action));
+                            }
                         }
-                        KeyCode::BackTab => model.handle_modal_previous(),
-                        KeyCode::Enter => model.execute_menu_action(),
-                        _ => {}
                     }
                     if model.should_quit() {
                         return Ok(model.accepted_command().map(ToOwned::to_owned));

@@ -10,7 +10,7 @@ fn version_flag_reports_the_package_version() {
         .arg("--version")
         .assert()
         .success()
-        .stdout(predicate::str::contains("cmdscope 0.2.2"));
+        .stdout(predicate::str::contains("cmdscope 0.2.3"));
 }
 
 #[test]

@@ -1,28 +1,14 @@
-use crate::{
-    HistoryEntry,
-    config::{ColumnConfig, DateFormat},
-};
-use std::fmt::Write;
-use unicode_width::UnicodeWidthStr;
+use crate::HistoryEntry;
+use crate::config::{ColumnConfig, DateFormat};
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ColumnId {
     Date,
     Pwd,
     Exit,
     Duration,
-}
-
-impl ColumnId {
-    pub fn from_name(name: &str) -> Option<Self> {
-        match name {
-            "date" | "age" => Some(Self::Date),
-            "pwd" => Some(Self::Pwd),
-            "exit" => Some(Self::Exit),
-            "duration" | "time" => Some(Self::Duration),
-            _ => None,
-        }
-    }
 }
 
 pub fn format_column(
@@ -38,116 +24,70 @@ pub fn format_column(
             DateFormat::Date => format_date(entry.timestamp),
             DateFormat::Datetime => format_datetime(entry.timestamp, false),
             DateFormat::DatetimeSeconds => format_datetime(entry.timestamp, true),
-            DateFormat::Iso8601 => format_datetime(entry.timestamp, true).replace(' ', "T") + "Z",
+            DateFormat::Iso8601 => format!(
+                "{}Z",
+                format_datetime(entry.timestamp, true).replace(' ', "T")
+            ),
             DateFormat::Epoch => normalize_timestamp(entry.timestamp).to_string(),
         },
         ColumnId::Pwd => entry.cwd.clone(),
-        ColumnId::Exit => entry.exit.to_string(),
+        ColumnId::Exit => format!("exit {}", entry.exit),
         ColumnId::Duration => format_duration(entry.duration),
     }
 }
-
-pub fn truncate_to(input: &str, width: usize) -> String {
-    if UnicodeWidthStr::width(input) <= width {
-        return input.to_string();
-    }
-    if width == 0 {
-        return String::new();
-    }
-    let mut out = String::new();
-    let mut used = 0;
-    for c in input.chars() {
-        let w = unicode_width::UnicodeWidthChar::width(c).unwrap_or(0);
-        if used + w + 1 > width {
-            break;
-        }
-        out.push(c);
-        used += w;
-    }
-    out.push('…');
-    out
-}
-
 fn format_relative(timestamp: i64, now: i64, long: bool) -> String {
-    let age = now.saturating_sub(normalize_timestamp(timestamp));
-    if age <= 0 {
-        return if long {
-            "just now".into()
-        } else {
-            "now".into()
-        };
+    let t = normalize_timestamp(timestamp);
+    if t >= now {
+        return "now".into();
     }
-    let (value, unit) = if age >= 31_557_600 {
-        (age / 31_557_600, "year")
-    } else if age >= 2_630_016 {
-        (age / 2_630_016, "month")
-    } else if age >= 86_400 {
-        (age / 86_400, "day")
-    } else if age >= 3_600 {
-        (age / 3_600, "hour")
-    } else if age >= 60 {
-        (age / 60, "minute")
-    } else {
-        (age, "second")
-    };
+    let s = u64::try_from(now.saturating_sub(t)).unwrap_or(u64::MAX);
     if long {
-        format!("{value} {unit}{} ago", if value == 1 { "" } else { "s" })
+        format_seconds_long(s)
     } else {
-        format!(
-            "{value}{} ago",
-            match unit {
-                "year" => "y",
-                "month" => "mo",
-                "day" => "d",
-                "hour" => "h",
-                "minute" => "m",
-                _ => "s",
-            }
-        )
+        format!("{} ago", format_seconds(s))
     }
 }
-
-fn format_duration(ns: i64) -> String {
-    let ns = u64::try_from(ns).unwrap_or_default();
-    if ns >= 1_000_000_000 {
-        return format!("{}s", ns / 1_000_000_000);
+fn format_seconds(seconds: u64) -> String {
+    for (s, u) in [
+        (31_557_600, "y"),
+        (2_630_016, "mo"),
+        (86_400, "d"),
+        (3_600, "h"),
+        (60, "m"),
+    ] {
+        if seconds >= s {
+            return format!("{}{u}", seconds / s);
+        }
     }
-    if ns >= 1_000_000 {
-        return format!("{}ms", ns / 1_000_000);
-    }
-    if ns >= 1_000 {
-        return format!("{}us", ns / 1_000);
-    }
-    format!("{ns}ns")
+    format!("{seconds}s")
 }
-
-fn normalize_timestamp(timestamp: i64) -> i64 {
-    let magnitude = timestamp.unsigned_abs();
-    if magnitude >= 100_000_000_000_000_000 {
-        timestamp / 1_000_000_000
-    } else if magnitude >= 100_000_000_000_000 {
-        timestamp / 1_000_000
-    } else if magnitude >= 100_000_000_000 {
-        timestamp / 1_000
-    } else {
+fn format_seconds_long(seconds: u64) -> String {
+    for (s, u) in [
+        (31_557_600, "years"),
+        (2_630_016, "months"),
+        (86_400, "days"),
+        (3_600, "hours"),
+        (60, "minutes"),
+    ] {
+        if seconds >= s {
+            let n = seconds / s;
+            return format!("{n} {u} ago");
+        }
+    }
+    format!("{seconds} seconds ago")
+}
+pub fn normalize_timestamp(timestamp: i64) -> i64 {
+    let abs = timestamp.unsigned_abs();
+    if abs < 50_000_000_000 {
         timestamp
-    }
-}
-
-fn format_datetime(timestamp: i64, seconds: bool) -> String {
-    let seconds_since_epoch = normalize_timestamp(timestamp);
-    let day_seconds = seconds_since_epoch.rem_euclid(86_400);
-    let hour = day_seconds / 3_600;
-    let minute = day_seconds / 60 % 60;
-    let second = day_seconds % 60;
-    let date = format_date(timestamp);
-    if seconds {
-        format!("{date} {hour:02}:{minute:02}:{second:02}")
+    } else if abs < 50_000_000_000_000 {
+        timestamp / 1_000
+    } else if abs < 50_000_000_000_000_000 {
+        timestamp / 1_000_000
     } else {
-        format!("{date} {hour:02}:{minute:02}")
+        timestamp / 1_000_000_000
     }
 }
-
 fn format_date(timestamp: i64) -> String {
     let days = normalize_timestamp(timestamp).div_euclid(86_400);
     let z = days + 719_468;
@@ -160,7 +100,72 @@ fn format_date(timestamp: i64) -> String {
     let d = doy - (153 * mp + 2) / 5 + 1;
     let m = mp + if mp < 10 { 3 } else { -9 };
     let y = y + if m <= 2 { 1 } else { 0 };
-    let mut s = String::new();
-    let _ = write!(&mut s, "{y:04}-{m:02}-{d:02}");
-    s
+    format!("{y:04}-{m:02}-{d:02}")
+}
+fn format_datetime(timestamp: i64, seconds: bool) -> String {
+    let t = normalize_timestamp(timestamp);
+    let ds = t.rem_euclid(86_400);
+    let h = ds / 3_600;
+    let m = ds / 60 % 60;
+    let s = ds % 60;
+    let date = format_date(timestamp);
+    if seconds {
+        format!("{date} {h:02}:{m:02}:{s:02}")
+    } else {
+        format!("{date} {h:02}:{m:02}")
+    }
+}
+fn format_duration(nanoseconds: i64) -> String {
+    let n = u64::try_from(nanoseconds).unwrap_or(0);
+    if n == 0 {
+        "0s".into()
+    } else if n >= 1_000_000_000 {
+        format!("{}s", n / 1_000_000_000)
+    } else if n >= 1_000_000 {
+        format!("{}ms", n / 1_000_000)
+    } else if n >= 1_000 {
+        format!("{}us", n / 1_000)
+    } else {
+        format!("{n}ns")
+    }
+}
+pub fn truncate_end(input: &str, width: usize) -> String {
+    if UnicodeWidthStr::width(input) <= width {
+        return input.to_owned();
+    }
+    if width == 0 {
+        return String::new();
+    }
+    let mut out = String::new();
+    let mut used = 0;
+    for c in input.chars() {
+        let w = UnicodeWidthChar::width(c).unwrap_or(0);
+        if used + w + 1 > width {
+            break;
+        }
+        out.push(c);
+        used += w
+    }
+    out.push('…');
+    out
+}
+pub fn truncate_start(input: &str, width: usize) -> String {
+    if UnicodeWidthStr::width(input) <= width {
+        return input.to_owned();
+    }
+    if width == 0 {
+        return String::new();
+    }
+    let mut chars = Vec::new();
+    let mut used = 0;
+    for c in input.chars().rev() {
+        let w = UnicodeWidthChar::width(c).unwrap_or(0);
+        if used + w + 1 > width {
+            break;
+        }
+        chars.push(c);
+        used += w
+    }
+    chars.reverse();
+    format!("…{}", chars.into_iter().collect::<String>())
 }
