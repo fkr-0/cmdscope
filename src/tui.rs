@@ -341,18 +341,23 @@ fn render_history(
 
     let content_width = usize::from(list_area.width.saturating_sub(2));
     let now = current_unix_seconds();
-    let items = model
+    let mut items = model
         .visible()
         .map(|entry| history_item(entry, model, config, now, content_width))
         .collect::<Vec<_>>();
+    items.reverse();
     let list = List::new(items).highlight_symbol("> ").highlight_style(
         Style::default()
             .add_modifier(Modifier::REVERSED)
             .add_modifier(Modifier::BOLD),
     );
+    let visual_index = model
+        .visible_len()
+        .saturating_sub(1)
+        .saturating_sub(model.selected_index());
     let mut state = ratatui::widgets::ListState::default()
-        .with_selected(Some(model.selected_index()))
-        .with_offset(model.selected_index().saturating_sub(2));
+        .with_selected(Some(visual_index))
+        .with_offset(visual_index.saturating_sub(2));
     StatefulWidget::render(list, list_area, buf, &mut state);
 }
 

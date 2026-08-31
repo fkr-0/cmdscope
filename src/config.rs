@@ -615,10 +615,10 @@ fn default_key_toggle_duration() -> Vec<String> {
     binding("alt-4")
 }
 fn default_key_select_next() -> Vec<String> {
-    bindings(&["down", "ctrl-n"])
+    bindings(&["up", "ctrl-k"])
 }
 fn default_key_select_previous() -> Vec<String> {
-    bindings(&["up", "ctrl-k"])
+    bindings(&["down", "ctrl-n"])
 }
 fn default_key_accept() -> Vec<String> {
     binding("enter")
