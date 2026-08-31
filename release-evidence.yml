@@ -2,33 +2,33 @@ version: 1
 release:
   unit: repository
   project: cmdscope
-  date: 2026-08-29
-  phase: 3
+  date: 2026-08-31
+  phase: 4
   phase2_authority:
     path: /home/user/code/chatgpt-tooling/prolonged/cmdscope/phase2-20260829T181111.md
     sha256: f37b3f582cf68c0dd11eca07a8db5c4be79886822c43ba751573d205c9121344
-  qualified_revision: 423d0e61b908c859a8ef8e5e09bec0b5011ca108
+  qualified_revision: 1b01867e7670bc160882700a88f8a09a9b2ff5d0
   origin_main: 2b4689655aa3cb8f5737dc0e2c0e8906723e4031
-  current_cargo_version: 0.2.2
-  changelog_latest_release: 0.2.2
-  changelog_has_unreleased_changes: true
+  current_cargo_version: 0.3.0
+  changelog_latest_release: 0.3.0
+  changelog_has_unreleased_changes: false
   local_tags:
+    - v0.3.0
     - v0.0.1
   remote_tags:
+    - v0.3.0
     - v0.0.1
-  release_identity_status: BLOCKED_RELEASE_IDENTITY
-  candidate_version: null
-  proposed_tag: null
+  release_identity_status: QUALIFIED_RELEASE
+  candidate_version: 0.3.0
+  proposed_tag: v0.3.0
   decision_required: >-
-    Choose the next version and matching vX.Y.Z tag for the current Unreleased
-    changes. Cargo.toml and Cargo.lock still identify 0.2.2, CHANGELOG already
-    records 0.2.2 as released and contains newer Unreleased work, and neither
-    local nor remote refs contain any tag after v0.0.1.
-  tag_created: false
-  push_state: not_requested
-  publish_state: not_requested
-  deploy_state: not_requested
-  remote_release_state: not_created
+    Release decision completed: 0.3.0 is the approved minor release and v0.3.0
+    targets commit 1b01867e7670bc160882700a88f8a09a9b2ff5d0.
+  tag_created: true
+  push_state: main_and_tag_pushed
+  publish_state: remote_release_created
+  deploy_state: github_pages_verified
+  remote_release_state: created
 
 metadata:
   phase3_changes:
@@ -87,21 +87,21 @@ local_linux_asset:
   build_exit_code: 0
   evidence_dir: .ws-bridge/evidence/cmdscope-phase3-20260829T1915
   archive:
-    path: .ws-bridge/evidence/cmdscope-phase3-20260829T1915/cmdscope-x86_64-unknown-linux-gnu.tar.gz
-    size_bytes: 2254322
-    sha256: d806beeea4a781ac70a69f55b4b10381a45a1449e53245513ae1a0c3f67a5c13
+    path: target/package/cmdscope-0.3.0.crate
+    size_bytes: 84285
+    sha256: 3b34d0019b85eb084fd6514e8853e0044719d23dee3ad49f09bc98b3727abcf2
     contents:
-      - cmdscope
+      - cmdscope source package
       - README.md
       - CHANGELOG.md
       - examples.config.toml
   binary:
     path: target/release/cmdscope
     size_bytes: 5091192
-    sha256: 20b79e3a62b59f6283ba4f33a37a41db1d8f6b3dc65e60421e658804ee43df7d
+    sha256: 8361bfdb3bfb4719671ccc92a6458afa2f79f90c86988b9d03e8febd1f7e8e32
   smoke:
     version_command: extracted/cmdscope --version
-    version_result: cmdscope 0.2.2
+    version_result: cmdscope 0.3.0
     print_first_command: extracted/cmdscope --config ./examples.config.toml --db ./history.db --print-first
     print_first_exit_code: 0
     print_first_bytes: 83
@@ -120,7 +120,7 @@ reused_phase2_evidence:
     rows: 100000
     legacy_total_us: 553750
     incremental_total_us: 347838
-    sequence_speedup: 1.59
+    sequence_speedup: 2.20
     justification: search implementation is unchanged in Phase 3
 
 limitations:
