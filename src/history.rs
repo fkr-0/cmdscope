@@ -3,7 +3,7 @@ use anyhow::{Context, Result, bail};
 use rusqlite::{Connection, OpenFlags};
 use std::{
     collections::{HashMap, HashSet},
-    path::Path,
+    path::{Path, PathBuf},
     sync::Arc,
     time::Duration,
 };
@@ -104,6 +104,7 @@ impl HistoryEntry {
 #[derive(Debug, Clone)]
 pub struct HistoryStore {
     entries: Arc<[HistoryEntry]>,
+    source_path: Option<Arc<PathBuf>>,
     cwd_index: Arc<HashMap<String, Arc<[usize]>>>,
     id_index: Arc<HashMap<String, Option<usize>>>,
 }
@@ -131,6 +132,7 @@ impl HistoryStore {
 
         Self {
             entries: Arc::from(entries),
+            source_path: None,
             cwd_index: Arc::new(
                 cwd_index
                     .into_iter()
@@ -191,7 +193,13 @@ impl HistoryStore {
                 )
             })?;
 
-        Ok(Self::from_entries(entries))
+        let mut store = Self::from_entries(entries);
+        store.source_path = Some(Arc::new(path.to_path_buf()));
+        Ok(store)
+    }
+
+    pub fn source_path(&self) -> Option<&Path> {
+        self.source_path.as_deref().map(PathBuf::as_path)
     }
 
     pub fn len(&self) -> usize {

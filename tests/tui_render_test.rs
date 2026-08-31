@@ -216,7 +216,8 @@ fn context_view_renders_neighbor_dates_in_chronological_order_across_sessions() 
     model.update(Msg::SelectNext);
     model.update(Msg::ToggleContext);
 
-    let text = rendered_text_at(&model, &AppConfig::default(), 120, 14).0;
+    let config = AppConfig::from_toml("[ui.columns]\ndate_format = \"date\"\n").unwrap();
+    let text = rendered_text_at(&model, &config, 120, 14).0;
     let first = text.find("2023-11-14").expect("first date");
     let second = text.find("2023-11-15").expect("second date");
     let third = text.find("2023-11-16").expect("third date");
@@ -239,7 +240,8 @@ fn future_second_timestamps_are_not_misclassified_as_milliseconds() {
         Some("/repo".to_string()),
     );
 
-    let text = rendered_text(&model, &AppConfig::default());
+    let config = AppConfig::from_toml("[ui.columns]\ndate_format = \"date\"\n").unwrap();
+    let text = rendered_text(&model, &config);
 
     assert!(text.contains("2300-01-01"), "{text}");
 }
@@ -264,7 +266,8 @@ fn common_timestamp_precisions_render_the_same_date() {
             )]),
             Some("/repo".to_string()),
         );
-        let text = rendered_text(&model, &AppConfig::default());
+        let config = AppConfig::from_toml("[ui.columns]\ndate_format = \"date\"\n").unwrap();
+        let text = rendered_text(&model, &config);
         assert!(text.contains("2023-11-14"), "timestamp={timestamp}\n{text}");
     }
 }
@@ -329,12 +332,12 @@ fn selected_row_has_visible_marker() {
 }
 
 #[test]
-fn default_render_includes_status_date_and_pwd_metadata() {
+fn default_render_includes_status_relative_age_and_pwd_metadata() {
     let text = rendered_text(&model(), &AppConfig::default());
 
-    assert!(text.contains("0s"), "rendered output:\n{text}");
-    assert!(text.contains("2023-11-14"), "rendered output:\n{text}");
+    assert!(text.contains("ago"), "rendered output:\n{text}");
     assert!(text.contains("/repo"), "rendered output:\n{text}");
+    assert!(text.contains("cargo test"), "rendered output:\n{text}");
 }
 
 #[test]
@@ -345,14 +348,7 @@ fn metadata_can_be_toggled_off_at_runtime() {
     let text = rendered_text(&model, &AppConfig::default());
 
     assert!(text.contains("git status"), "rendered output:\n{text}");
-    assert!(
-        !text.contains("git status  2023-11-14"),
-        "rendered output:\n{text}"
-    );
-    assert!(
-        !text.contains("git status  /repo"),
-        "rendered output:\n{text}"
-    );
+    assert!(!text.contains("2y ago"), "rendered output:\n{text}");
 }
 
 #[test]

@@ -183,6 +183,20 @@ fn hundreds_of_matches_are_bounded_without_changing_ranking() {
 }
 
 #[test]
+fn hash_subfilters_narrow_the_previous_candidate_stream() {
+    let store = HistoryStore::from_entries(vec![
+        HistoryEntry::new("1", 1, 0, "cargo build", "/repo", "s", "h"),
+        HistoryEntry::new("2", 2, 0, "cargo test", "/repo", "s", "h"),
+        HistoryEntry::new("3", 3, 0, "git test", "/repo", "s", "h"),
+    ]);
+    let mut engine = SearchEngine::new(store.clone(), 10);
+    engine.set_query("cargo#test");
+    assert_eq!(engine.results().len(), 1);
+    assert_eq!(engine.entry(engine.results()[0]).command, "cargo test");
+    assert_eq!(engine.stats().scanned, 2);
+}
+
+#[test]
 fn changing_scope_preserves_the_active_query() {
     let store = store();
     let mut engine = SearchEngine::new(store, 37);

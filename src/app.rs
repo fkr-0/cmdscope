@@ -1,6 +1,8 @@
 use crate::{
-    HistoryEntry, HistoryStore, KeyAction, PwdMatchMode, SearchEngine, SearchMode, SearchScope,
-    SearchStats,
+    Action, ColumnId, HistoryEntry, HistoryStore, KeyAction, PwdMatchMode, SearchEngine,
+    SearchMode, SearchScope, SearchStats,
+    config::ColumnConfig,
+    menu::{Menu, default_actions_menu},
 };
 
 /// Pure update messages accepted by [`AppModel::update`].
@@ -27,6 +29,11 @@ pub enum Msg {
     ContextExpand,
     ContextShrink,
     ToggleMetadata,
+    OpenActions,
+    ToggleDate,
+    TogglePwd,
+    ToggleExit,
+    ToggleDuration,
     Accept,
     Quit,
 }
@@ -49,6 +56,11 @@ impl From<KeyAction> for Msg {
             KeyAction::ContextExpand => Self::ContextExpand,
             KeyAction::ContextShrink => Self::ContextShrink,
             KeyAction::ToggleMetadata => Self::ToggleMetadata,
+            KeyAction::OpenActions => Self::OpenActions,
+            KeyAction::ToggleDate => Self::ToggleDate,
+            KeyAction::TogglePwd => Self::TogglePwd,
+            KeyAction::ToggleExit => Self::ToggleExit,
+            KeyAction::ToggleDuration => Self::ToggleDuration,
             KeyAction::SelectNext => Self::SelectNext,
             KeyAction::SelectPrevious => Self::SelectPrevious,
             KeyAction::Accept => Self::Accept,
@@ -79,13 +91,28 @@ pub struct AppModel {
     visible: Vec<usize>,
     view_mode: ViewMode,
     metadata_visible: bool,
+    columns: ColumnConfig,
+    actions_menu: Option<Menu>,
     should_quit: bool,
+    query_error: Option<String>,
     accepted_command: Option<String>,
 }
 
 impl AppModel {
     pub fn new(store: HistoryStore, current_pwd: Option<String>) -> Self {
         Self::new_with_environment(store, current_pwd, None, PwdMatchMode::Exact)
+    }
+
+    pub fn new_with_config(
+        store: HistoryStore,
+        current_pwd: Option<String>,
+        git_root: Option<String>,
+        config: &ColumnConfig,
+        pwd_match_mode: PwdMatchMode,
+    ) -> Self {
+        let mut model = Self::new_with_environment(store, current_pwd, git_root, pwd_match_mode);
+        model.columns = config.clone();
+        model
     }
 
     pub fn new_with_environment(
@@ -110,7 +137,10 @@ impl AppModel {
             visible,
             view_mode: ViewMode::Search,
             metadata_visible: true,
+            columns: ColumnConfig::default(),
+            actions_menu: None,
             should_quit: false,
+            query_error: None,
             accepted_command: None,
         }
     }
@@ -282,6 +312,11 @@ impl AppModel {
                 }
             }
             Msg::ToggleMetadata => self.metadata_visible = !self.metadata_visible,
+            Msg::OpenActions => self.actions_menu = Some(default_actions_menu()),
+            Msg::ToggleDate => self.columns.date = !self.columns.date,
+            Msg::TogglePwd => self.columns.pwd = !self.columns.pwd,
+            Msg::ToggleExit => self.columns.exit = !self.columns.exit,
+            Msg::ToggleDuration => self.columns.duration = !self.columns.duration,
             Msg::Accept => {
                 self.accepted_command = self.selected().map(|entry| entry.command.clone());
                 self.should_quit = true;
@@ -318,7 +353,10 @@ impl AppModel {
     fn refresh_results(&mut self) {
         self.search.set_scope(self.scope());
         if self.search.query() != self.query {
-            self.search.set_query(&self.query);
+            match self.search.try_set_query(&self.query) {
+                Ok(()) => self.query_error = None,
+                Err(error) => self.query_error = Some(error.to_string()),
+            }
         }
         self.visible.clear();
         self.visible.extend_from_slice(self.search.results());
@@ -387,6 +425,106 @@ impl AppModel {
         self.metadata_visible
     }
 
+    pub fn column_visible(&self, column: ColumnId) -> bool {
+        if !self.metadata_visible {
+            return false;
+        }
+        match column {
+            ColumnId::Date => self.columns.date,
+            ColumnId::Pwd => self.columns.pwd,
+            ColumnId::Exit => self.columns.exit,
+            ColumnId::Duration => self.columns.duration,
+        }
+    }
+
+    pub fn columns(&self) -> &ColumnConfig {
+        &self.columns
+    }
+
+    pub fn selected_id(&self) -> Option<&str> {
+        self.selected().map(|entry| entry.id.as_str())
+    }
+
+    /// Replace the immutable history snapshot while preserving the active query
+    /// and selected identity whenever that identity still exists.
+    pub fn replace_history(&mut self, store: HistoryStore) {
+        let selected_id = self.selected_id().map(str::to_owned);
+        let old_index = self.selected_index;
+        self.search = SearchEngine::new(store, 200);
+        self.history_count = self.search.history_count();
+        self.refresh_results();
+        if let Some(id) = selected_id
+            && let Some(index) = self
+                .visible
+                .iter()
+                .position(|&index| self.search.entry(index).id == id)
+        {
+            self.selected_index = index;
+            return;
+        }
+        if !self.visible.is_empty() {
+            self.selected_index = old_index.min(self.visible.len() - 1);
+        }
+    }
+
+    pub fn actions_menu(&self) -> Option<&Menu> {
+        self.actions_menu.as_ref()
+    }
+
+    pub fn actions_menu_mut(&mut self) -> Option<&mut Menu> {
+        self.actions_menu.as_mut()
+    }
+
+    pub fn close_actions_menu(&mut self) {
+        self.actions_menu = None;
+    }
+
+    pub fn modal_open(&self) -> bool {
+        self.actions_menu.is_some()
+    }
+
+    pub fn execute_menu_action(&mut self) {
+        let Some(menu) = self.actions_menu.as_ref() else {
+            return;
+        };
+        let Some(item) = menu.selected_item() else {
+            return;
+        };
+        let action = item.action.clone();
+        match action {
+            Action::InsertExit => {
+                self.accepted_command = self.selected().map(|entry| entry.command.clone());
+                self.actions_menu = None;
+                self.should_quit = true;
+            }
+            Action::Append => {
+                let command = self.selected().map(|entry| entry.command.clone());
+                if let Some(command) = command {
+                    if !self.query.is_empty() {
+                        self.query.push(' ');
+                    }
+                    self.query.push_str(&command);
+                    self.query_cursor = self.query.len();
+                    self.actions_menu = None;
+                    self.reset_search_results();
+                }
+            }
+            Action::AppendExit | Action::AndAppend | Action::OrAppend => {
+                if let Some(entry) = self.selected() {
+                    let composed = action.compose(&self.query, entry);
+                    self.accepted_command = Some(composed);
+                    self.actions_menu = None;
+                    self.should_quit = true;
+                }
+            }
+            Action::Menu(_) | Action::Window(_) | Action::Wrap(_) => {}
+        }
+    }
+
+    pub fn query_error(&self) -> Option<&str> {
+        self.query_error.as_deref()
+    }
+
     pub fn should_quit(&self) -> bool {
         self.should_quit
     }
@@ -419,5 +557,16 @@ impl AppModel {
 
     pub fn search_stats(&self) -> SearchStats {
         self.search.stats()
+    }
+
+    pub fn handle_modal_next(&mut self) {
+        if let Some(menu) = &mut self.actions_menu {
+            menu.next();
+        }
+    }
+    pub fn handle_modal_previous(&mut self) {
+        if let Some(menu) = &mut self.actions_menu {
+            menu.previous();
+        }
     }
 }

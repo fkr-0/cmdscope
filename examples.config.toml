@@ -1,4 +1,3 @@
-[keys]
 global = "ctrl-g"
 pwd = "ctrl-p"
 git_root = "ctrl-r"
@@ -8,6 +7,11 @@ context_expand = "alt-]"
 context_shrink = "alt-["
 toggle_pwd_mode = "ctrl-s"
 toggle_metadata = "alt-m"
+actions = "ctrl-space"
+toggle_date = "alt-1"
+toggle_pwd = "alt-2"
+toggle_exit = "alt-3"
+toggle_duration = "alt-4"
 select_next = ["down", "ctrl-n"]
 select_previous = ["up", "ctrl-k"]
 accept = "enter"
@@ -25,5 +29,15 @@ cursor_end = ["end", "ctrl-e"]
 mode = "subdirs"
 
 [ui]
-# Columns shown when metadata is visible. Supported: "date", "pwd".
+# Legacy metadata list remains accepted for compatibility.
 history_columns = ["date", "pwd"]
+# Persistent preview is shown on sufficiently large terminals.
+preview = true
+
+[ui.columns]
+date = true
+pwd = true
+exit = false
+duration = false
+date_format = "relative" # relative, relative_long, date, datetime, datetime_seconds, iso8601, epoch
+min_width = 12

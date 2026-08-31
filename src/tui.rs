@@ -1,11 +1,12 @@
-use crate::{AppConfig, AppModel, HistoryColumn, HistoryEntry, SearchMode};
+use crate::{AppConfig, AppModel, ColumnId, HistoryEntry, SearchMode};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout},
     prelude::{Buffer, Color, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{
-        Block, BorderType, Borders, List, ListItem, Paragraph, StatefulWidget, Tabs, Widget, Wrap,
+        Block, BorderType, Borders, Clear, List, ListItem, Paragraph, StatefulWidget, Tabs, Widget,
+        Wrap,
     },
 };
 use std::{
@@ -73,14 +74,19 @@ pub fn render(
             render_header(model, config, chunks[0], buf);
             render_tabs(model, chunks[1], buf);
             render_history(model, config, chunks[2], buf, compactness);
-            render_input(model, chunks[3], buf)
+            let cursor = render_input(model, chunks[3], buf);
+            render_actions_menu(model, area, buf);
+            cursor
         }
         Compactness::Full => {
             render_header(model, config, chunks[0], buf);
             render_tabs(model, chunks[1], buf);
             render_history(model, config, chunks[2], buf, compactness);
             let cursor = render_input(model, chunks[3], buf);
-            render_preview(model, chunks[4], buf);
+            if config.ui.preview {
+                render_preview(model, chunks[4], buf);
+            }
+            render_actions_menu(model, area, buf);
             cursor
         }
     }
@@ -272,15 +278,7 @@ fn render_history(
     let now = current_unix_seconds();
     let items = model
         .visible()
-        .map(|entry| {
-            history_item(
-                entry,
-                model.metadata_visible(),
-                &config.ui.history_columns,
-                now,
-                content_width,
-            )
-        })
+        .map(|entry| history_item(entry, model, &config.ui.columns, now, content_width))
         .collect::<Vec<_>>();
     let list = List::new(items).highlight_symbol("> ").highlight_style(
         Style::default()
@@ -369,6 +367,51 @@ fn render_input(model: &AppModel, area: Rect, buf: &mut Buffer) -> Option<(u16, 
         .saturating_add(u16::try_from(cursor_column).unwrap_or(u16::MAX))
         .min(area.x.saturating_add(area.width.saturating_sub(1)));
     Some((cursor_x, area.y))
+}
+
+fn render_actions_menu(model: &AppModel, area: Rect, buf: &mut Buffer) {
+    let Some(menu) = model.actions_menu() else {
+        return;
+    };
+    let width = 30.min(area.width.saturating_sub(4));
+    let height = (menu.items.len() as u16 + 2).min(area.height.saturating_sub(2));
+    if width < 12 || height < 3 {
+        return;
+    }
+    let popup = Rect::new(
+        area.x + area.width.saturating_sub(width) / 2,
+        area.y + area.height.saturating_sub(height) / 2,
+        width,
+        height,
+    );
+    Clear.render(popup, buf);
+    let items = menu
+        .items
+        .iter()
+        .enumerate()
+        .map(|(index, item)| {
+            let marker = if index == menu.selected { "> " } else { "  " };
+            let style = if index == menu.selected {
+                Style::default().add_modifier(Modifier::REVERSED | Modifier::BOLD)
+            } else {
+                Style::default()
+            };
+            ListItem::new(Line::from(Span::styled(
+                format!("{marker}{}", item.label),
+                style,
+            )))
+        })
+        .collect::<Vec<_>>();
+    Widget::render(
+        List::new(items).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .title(" Actions "),
+        ),
+        popup,
+        buf,
+    );
 }
 
 fn render_preview(model: &AppModel, area: Rect, buf: &mut Buffer) {
@@ -463,8 +506,8 @@ fn primary_binding(bindings: &[String]) -> &str {
 
 fn history_item(
     entry: &HistoryEntry,
-    metadata_visible: bool,
-    columns: &[HistoryColumn],
+    model: &AppModel,
+    columns: &crate::config::ColumnConfig,
     now: i64,
     content_width: usize,
 ) -> ListItem<'static> {
@@ -472,49 +515,32 @@ fn history_item(
     let status_style = Style::default()
         .fg(if success { Color::Green } else { Color::Red })
         .add_modifier(Modifier::BOLD);
-    let show_duration = content_width >= 24;
-    let show_age = content_width >= 42;
-
     let mut spans = vec![
         Span::styled(if success { "✓" } else { "×" }, status_style),
         Span::raw(" "),
     ];
-    let mut prefix_width = 2;
-    if show_duration {
-        spans.push(Span::styled(
-            format!("{:>7}", format_execution_duration(entry.duration)),
-            status_style,
-        ));
-        spans.push(Span::raw(" "));
-        prefix_width += 8;
-    }
-    if show_age {
-        spans.push(Span::styled(
-            format!("{:>10}", format_relative_age(entry.timestamp, now)),
-            Style::default().fg(Color::DarkGray),
-        ));
-        spans.push(Span::raw(" "));
-        prefix_width += 11;
-    }
+    let prefix_width = 2;
 
     let mut metadata = Vec::<(String, Style)>::new();
     let mut metadata_width = 0;
-    if metadata_visible {
-        for column in columns {
-            let value = match column {
-                HistoryColumn::Date => format_unix_date(entry.timestamp),
-                HistoryColumn::Pwd => {
-                    truncate_start_to_width(display_text(&entry.cwd).as_ref(), 28)
-                }
-            };
-            let width = UnicodeWidthStr::width(value.as_str());
-            let required = 2 + width;
-            if content_width.saturating_sub(prefix_width + metadata_width + required)
-                >= MIN_COMMAND_WIDTH
-            {
-                metadata_width += required;
-                metadata.push((value, Style::default().fg(Color::DarkGray)));
+    for column in columns.visible() {
+        if !model.column_visible(column) || (content_width < 60 && column == ColumnId::Pwd) {
+            continue;
+        }
+        let value = match column {
+            ColumnId::Date | ColumnId::Duration => {
+                crate::columns::format_column(entry, column, columns, now)
             }
+            ColumnId::Pwd => truncate_start_to_width(display_text(&entry.cwd).as_ref(), 28),
+            ColumnId::Exit => format!("exit {}", entry.exit),
+        };
+        let width = UnicodeWidthStr::width(value.as_str());
+        let required = 2 + width;
+        if content_width.saturating_sub(prefix_width + metadata_width + required)
+            >= MIN_COMMAND_WIDTH
+        {
+            metadata_width += required;
+            metadata.push((value, Style::default().fg(Color::DarkGray)));
         }
     }
 
@@ -643,16 +669,6 @@ fn format_execution_duration(nanoseconds: i64) -> String {
     format_duration(Duration::from_nanos(nanoseconds))
 }
 
-fn format_relative_age(timestamp: i64, now: i64) -> String {
-    let seconds = normalized_timestamp_seconds(timestamp);
-    if seconds >= now {
-        "now".to_string()
-    } else {
-        let elapsed = u64::try_from(now.saturating_sub(seconds)).unwrap_or(u64::MAX);
-        format!("{} ago", format_seconds(elapsed))
-    }
-}
-
 fn format_duration(duration: Duration) -> String {
     let seconds = duration.as_secs();
     if seconds > 0 {
@@ -690,6 +706,7 @@ fn format_seconds(seconds: u64) -> String {
     format!("{seconds}s")
 }
 
+#[allow(dead_code)]
 fn format_unix_date(timestamp: i64) -> String {
     let seconds = normalized_timestamp_seconds(timestamp);
     let days = seconds.div_euclid(86_400);

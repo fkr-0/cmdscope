@@ -1,4 +1,4 @@
-use cmdscope::{AppModel, HistoryEntry, HistoryStore, Msg, SearchMode};
+use cmdscope::{Action, AppModel, HistoryEntry, HistoryStore, Msg, SearchMode};
 
 fn model() -> AppModel {
     AppModel::new(
@@ -9,6 +9,43 @@ fn model() -> AppModel {
         ]),
         Some("/repo".to_string()),
     )
+}
+
+#[test]
+fn actions_menu_composes_selected_command_without_executing_shell() {
+    let mut model = model();
+    model.update(Msg::OpenActions);
+    assert!(model.modal_open());
+    model.execute_menu_action();
+    assert!(model.should_quit());
+    assert_eq!(model.accepted_command(), Some("ls"));
+}
+
+#[test]
+fn append_action_stays_in_picker_and_updates_query() {
+    let mut model = model();
+    model.update(Msg::OpenActions);
+    model.handle_modal_next();
+    model.execute_menu_action();
+    assert!(!model.should_quit());
+    assert_eq!(model.query(), "ls");
+}
+
+#[test]
+fn compose_actions_preserve_shell_text_without_execution() {
+    let entry = model().selected().unwrap().clone();
+    assert_eq!(
+        Action::AndAppend.compose("git status", &entry),
+        "git status && ls"
+    );
+    assert_eq!(
+        Action::OrAppend.compose("git status", &entry),
+        "git status || ls"
+    );
+    assert_eq!(
+        Action::AppendExit.compose("git status", &entry),
+        "git status ls"
+    );
 }
 
 #[test]

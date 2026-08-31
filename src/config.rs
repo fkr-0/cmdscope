@@ -1,3 +1,4 @@
+use crate::columns::ColumnId;
 use crate::keymap::KeyMap;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Deserializer};
@@ -64,6 +65,19 @@ pub struct KeyConfig {
         deserialize_with = "one_or_many"
     )]
     pub toggle_metadata: Vec<String>,
+    #[serde(default = "default_key_actions", deserialize_with = "one_or_many")]
+    pub actions: Vec<String>,
+    #[serde(default = "default_key_toggle_date", deserialize_with = "one_or_many")]
+    pub toggle_date: Vec<String>,
+    #[serde(default = "default_key_toggle_pwd", deserialize_with = "one_or_many")]
+    pub toggle_pwd: Vec<String>,
+    #[serde(default = "default_key_toggle_exit", deserialize_with = "one_or_many")]
+    pub toggle_exit: Vec<String>,
+    #[serde(
+        default = "default_key_toggle_duration",
+        deserialize_with = "one_or_many"
+    )]
+    pub toggle_duration: Vec<String>,
     #[serde(default = "default_key_select_next", deserialize_with = "one_or_many")]
     pub select_next: Vec<String>,
     #[serde(
@@ -105,6 +119,11 @@ impl Default for KeyConfig {
             context_expand: default_key_context_expand(),
             context_shrink: default_key_context_shrink(),
             toggle_metadata: default_key_toggle_metadata(),
+            actions: default_key_actions(),
+            toggle_date: default_key_toggle_date(),
+            toggle_pwd: default_key_toggle_pwd(),
+            toggle_exit: default_key_toggle_exit(),
+            toggle_duration: default_key_toggle_duration(),
             select_next: default_key_select_next(),
             select_previous: default_key_select_previous(),
             accept: default_key_accept(),
@@ -143,6 +162,74 @@ pub enum HistoryColumn {
     Pwd,
 }
 
+/// Compact and deterministic representations supported by metadata columns.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum DateFormat {
+    #[default]
+    Relative,
+    RelativeLong,
+    Date,
+    Datetime,
+    DatetimeSeconds,
+    Iso8601,
+    Epoch,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ColumnConfig {
+    #[serde(default = "default_column_date", alias = "age")]
+    pub date: bool,
+    #[serde(default = "default_column_pwd")]
+    pub pwd: bool,
+    #[serde(default)]
+    pub exit: bool,
+    #[serde(default)]
+    pub duration: bool,
+    #[serde(default)]
+    pub date_format: DateFormat,
+    #[serde(default = "default_column_min_width")]
+    pub min_width: usize,
+}
+
+impl Default for ColumnConfig {
+    fn default() -> Self {
+        Self {
+            date: true,
+            pwd: true,
+            exit: false,
+            duration: false,
+            date_format: DateFormat::Relative,
+            min_width: 12,
+        }
+    }
+}
+
+fn default_column_date() -> bool {
+    true
+}
+fn default_column_pwd() -> bool {
+    true
+}
+fn default_column_min_width() -> usize {
+    12
+}
+
+impl ColumnConfig {
+    pub fn visible(&self) -> Vec<ColumnId> {
+        [
+            self.date.then_some(ColumnId::Date),
+            self.pwd.then_some(ColumnId::Pwd),
+            self.exit.then_some(ColumnId::Exit),
+            self.duration.then_some(ColumnId::Duration),
+        ]
+        .into_iter()
+        .flatten()
+        .collect()
+    }
+}
+
 fn default_history_columns() -> Vec<HistoryColumn> {
     vec![HistoryColumn::Date, HistoryColumn::Pwd]
 }
@@ -152,14 +239,40 @@ fn default_history_columns() -> Vec<HistoryColumn> {
 pub struct UiConfig {
     #[serde(default = "default_history_columns")]
     pub history_columns: Vec<HistoryColumn>,
+    #[serde(default)]
+    pub columns: ColumnConfig,
+    #[serde(default = "default_preview")]
+    pub preview: bool,
+}
+
+impl UiConfig {
+    pub fn effective_columns(&self) -> ColumnConfig {
+        if self.columns == ColumnConfig::default()
+            && self.history_columns != default_history_columns()
+        {
+            ColumnConfig {
+                date: self.history_columns.contains(&HistoryColumn::Date),
+                pwd: self.history_columns.contains(&HistoryColumn::Pwd),
+                ..self.columns.clone()
+            }
+        } else {
+            self.columns.clone()
+        }
+    }
 }
 
 impl Default for UiConfig {
     fn default() -> Self {
         Self {
             history_columns: default_history_columns(),
+            columns: ColumnConfig::default(),
+            preview: true,
         }
     }
+}
+
+fn default_preview() -> bool {
+    true
 }
 
 /// Top-level TOML configuration.
@@ -229,6 +342,21 @@ fn default_key_context_shrink() -> Vec<String> {
 }
 fn default_key_toggle_metadata() -> Vec<String> {
     binding("alt-m")
+}
+fn default_key_actions() -> Vec<String> {
+    binding("ctrl-space")
+}
+fn default_key_toggle_date() -> Vec<String> {
+    binding("alt-1")
+}
+fn default_key_toggle_pwd() -> Vec<String> {
+    binding("alt-2")
+}
+fn default_key_toggle_exit() -> Vec<String> {
+    binding("alt-3")
+}
+fn default_key_toggle_duration() -> Vec<String> {
+    binding("alt-4")
 }
 fn default_key_select_next() -> Vec<String> {
     bindings(&["down", "ctrl-n"])

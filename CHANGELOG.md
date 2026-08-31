@@ -9,6 +9,10 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html/)
 
 ### Added
 
+- Added typed `date`/`pwd`/`exit`/`duration` presentation columns with compact relative-age defaults and runtime column visibility shortcuts.
+- Added the built-in keyboard-first Actions menu with text-only append/compose actions and innermost Escape cancellation.
+- Added explicit fuzzy, quoted-literal, and `/regex/` query stages with `#` candidate-stream subfilters and malformed-query diagnostics.
+- Added bounded SQLite metadata observation for live history refresh while preserving the active query and selected history identity when possible.
 - Added an adaptive Atuin-inspired TUI with `Search`/`Inspect` tabs, a
   version/help/history-count header, aligned execution-duration and relative-age
   columns, scope-aware query badges, and a selected-command preview.
@@ -40,6 +44,8 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html/)
   lexical symlink/mount-point scope semantics.
 - Kept mid-string query insertions incremental by narrowing from the previous
   fuzzy-match candidate set instead of rescanning the whole active scope.
+- Kept legacy `history_columns` configuration and shell-facing output semantics
+  while introducing the typed presentation layer.
 - Removed redundant SQLite-side history ordering so large database loads perform
   the deterministic timestamp/ID sort only once in memory.
 

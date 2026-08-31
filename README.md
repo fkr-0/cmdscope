@@ -408,6 +408,20 @@ Generate API docs locally:
 
 The public API is intentionally small so tests can exercise behavior without starting a terminal.
 
+## Next-generation query and action workflow
+
+The default history workspace keeps the query adjacent to the result list. Results are newest-first, with deterministic timestamp/id tie-breaking. The primary command stays protected from optional metadata as terminals narrow.
+
+The typed column presentation currently provides `date`, `pwd`, `exit`, and `duration`. Date defaults to compact relative age (`4m ago`) and can be changed with `ui.columns.date_format` to `relative_long`, `date`, `datetime`, `datetime_seconds`, `iso8601`, or `epoch`. `alt-1` through `alt-4` toggle the four columns by default; `alt-m` still provides the compatibility metadata master toggle.
+
+`ctrl-space` opens the built-in Actions menu. `Up`/`Down` or `j`/`k` select an item, `Tab`/`Shift-Tab` move through items, `Enter` confirms, and `Esc` closes only the innermost menu. Built-in composition is deliberately text-only: `append`, `append + exit`, `&& append`, and `|| append` compose selected history text and never execute it.
+
+Queries retain the normal fuzzy matcher and may add explicit stages. Quoted stages are literal, `/pattern/` stages are regex filters, and `#` composes subfilters: `cargo#test` first narrows to cargo candidates and then scans only those candidates for `test`. Escape `#` as `\\#` when it should be searched literally. Regex syntax is provided by Rust's `regex` engine; it is not PCRE compatibility.
+
+When Cmdscope has a real SQLite history path, the TUI watches its metadata without a busy loop. Changes are picked up during idle periods at a bounded cadence, query text remains intact, and the selected history identity is retained across refreshes when it still exists. Failed transient reads are ignored until the next observation rather than replacing a good snapshot with partial data.
+
+The current slice intentionally keeps the existing `context` inspector and persistent preview instead of duplicating them as a second subsystem. Configuration-defined menus/windows, richer wrap-template registries, and full responsive column ordering/width schemas remain follow-up work rather than inert compatibility shims.
+
 ## Release builds
 
 GitHub Actions runs CI on pushes and pull requests. Pushing a tag matching `v*` creates a GitHub Release and uploads packaged binaries. Choose the version only after Cargo and CHANGELOG release identity agree:

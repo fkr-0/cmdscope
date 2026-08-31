@@ -1,4 +1,5 @@
 use anyhow::Result;
+use cmdscope::live::FileFingerprint;
 use cmdscope::{AppConfig, AppModel, HistoryStore, KeyMap, Msg, tui};
 use crossterm::{
     event::{
@@ -9,7 +10,11 @@ use crossterm::{
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui::{Terminal, backend::CrosstermBackend};
-use std::io;
+use std::{
+    io,
+    path::Path,
+    time::{Duration, Instant},
+};
 
 type TuiTerminal = Terminal<CrosstermBackend<io::Stderr>>;
 
@@ -79,10 +84,19 @@ pub fn run_tui(
     config: AppConfig,
     keymap: KeyMap,
 ) -> Result<Option<String>> {
+    let source_path = store.source_path().map(Path::to_path_buf);
+    let effective_columns = config.ui.effective_columns();
     let mut session = TerminalSession::enter()?;
-    let mut model = AppModel::new_with_environment(store, cwd, git_root, config.pwd.mode);
+    let mut model =
+        AppModel::new_with_config(store, cwd, git_root, &effective_columns, config.pwd.mode);
 
-    let result = run_event_loop(&mut session.terminal, &mut model, &config, &keymap);
+    let result = run_event_loop(
+        &mut session.terminal,
+        &mut model,
+        &config,
+        &keymap,
+        source_path.as_deref(),
+    );
     let cleanup = session.restore();
     match (result, cleanup) {
         (Ok(selected), Ok(())) => Ok(selected),
@@ -96,11 +110,45 @@ fn run_event_loop(
     model: &mut AppModel,
     config: &AppConfig,
     keymap: &KeyMap,
+    source_path: Option<&Path>,
 ) -> Result<Option<String>> {
+    let mut fingerprint = source_path.and_then(|path| FileFingerprint::read(path).ok());
+    let mut last_refresh = Instant::now();
     draw(terminal, model, config)?;
     loop {
+        if !event::poll(Duration::from_millis(150))? {
+            if let Some(path) = source_path
+                && last_refresh.elapsed() >= Duration::from_millis(150)
+                && let Ok(next) = FileFingerprint::read(path)
+                && fingerprint.as_ref() != Some(&next)
+                && let Ok(store) = HistoryStore::load_sqlite(path)
+            {
+                model.replace_history(store);
+                fingerprint = Some(next);
+                last_refresh = Instant::now();
+                draw(terminal, model, config)?;
+            }
+            continue;
+        }
         match event::read()? {
             Event::Key(key) if matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) => {
+                if model.modal_open() {
+                    match key.code {
+                        KeyCode::Esc => model.close_actions_menu(),
+                        KeyCode::Up | KeyCode::Char('k') => model.handle_modal_previous(),
+                        KeyCode::Down | KeyCode::Char('j') | KeyCode::Tab => {
+                            model.handle_modal_next()
+                        }
+                        KeyCode::BackTab => model.handle_modal_previous(),
+                        KeyCode::Enter => model.execute_menu_action(),
+                        _ => {}
+                    }
+                    if model.should_quit() {
+                        return Ok(model.accepted_command().map(ToOwned::to_owned));
+                    }
+                    draw(terminal, model, config)?;
+                    continue;
+                }
                 if let Some(action) = keymap.action_for(key) {
                     model.update(Msg::from(action));
                 } else if let Some(character) = text_input(key) {

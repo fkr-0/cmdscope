@@ -350,6 +350,7 @@ dependencies = [
  "crossterm",
  "predicates",
  "ratatui",
+ "regex",
  "rusqlite",
  "serde",
  "skim",
