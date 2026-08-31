@@ -1,0 +1,28 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>cmdscope architecture</title><link rel="stylesheet" href="style.css"></head><body><main>
+<nav><a href="index.html">cmdscope</a><a href="tutorial.html">Tutorial</a><a href="configuration.html">Configuration</a><a href="recipes.html">Recipes</a><a href="architecture.html">Architecture</a></nav>
+<h1>Architecture</h1><p class="lede">Storage, search, behavior, rendering, and terminal ownership remain separate so the core can be tested without a live terminal.</p>
+<pre><code>SQLite
+  │
+  ▼
+history.rs  → immutable entries + indexes
+  │
+  ├── scope.rs → global / pwd / git-root semantics
+  │
+  ▼
+search.rs   → incremental fuzzy candidate sets + bounded top-K
+  │
+  ▼
+app.rs      → pure state transitions + modal state
+  │
+  ├── config.rs / keymap.rs → typed TOML validation
+  │
+  ▼
+tui.rs      → render-only Ratatui projection
+  │
+  ▼
+terminal.rs → terminal lifetime + blocking event loop</code></pre>
+<h2>History and refresh</h2><p>The store is loaded as an immutable snapshot. <code>LiveHistory</code> fingerprints the SQLite file and requests a fresh snapshot after metadata changes. The model reapplies scope and query and rebinds selection by stable history identity where possible.</p>
+<h2>Search</h2><p>Search layers narrow candidate streams as the query grows. Backspace can restore a cached prefix layer. A bounded heap retains only the best result set, avoiding a full sort of every fuzzy match.</p>
+<h2>Modal state</h2><p>Menus are stacked. Windows are explicit modal surfaces. The event loop resolves local modal bindings before the base keymap and never treats ordinary text as input while a modal is active.</p>
+<h2>Testing</h2><p>Pure model/store tests cover behavior without a terminal. SQLite refresh integration uses deterministic temporary databases. Render tests use fixed-size buffers, and the repository fixture is exercised through the real-db smoke command.</p>
+</main></body></html>

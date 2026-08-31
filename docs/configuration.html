@@ -1,0 +1,64 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>cmdscope configuration</title><link rel="stylesheet" href="style.css"></head><body><main>
+<nav><a href="index.html">cmdscope</a><a href="tutorial.html">Tutorial</a><a href="configuration.html">Configuration</a><a href="recipes.html">Recipes</a><a href="architecture.html">Architecture</a></nav>
+<h1>Configuration reference</h1><p class="lede">`examples.config.toml` is the canonical complete example; this reference explains every 0.3.0 configuration family.</p>
+<h2>Resolution and failure mode</h2><pre><code>--config PATH
+CMDSCOPE_CONFIG=PATH
+$XDG_CONFIG_HOME/cmdscope/config.toml
+built-in defaults</code></pre><p>Explicit paths must exist. Unknown TOML fields, invalid key chords, unknown action names, unsupported window kinds, and missing menu/window/wrap references fail closed during startup.</p>
+<h2>Keys</h2><p>All non-text-input actions accept a string or an array of aliases.</p><pre><code>[keys]
+actions = "ctrl-space"
+select_next = ["down", "ctrl-n"]
+select_previous = ["up", "ctrl-k"]
+context = "ctrl-o"
+quit = ["esc", "ctrl-c"]
+</code></pre><p>Local modal keymaps use the same key-token grammar.</p>
+<h2>Columns</h2><pre><code>[ui.columns]
+date = true
+pwd = true
+exit = false
+duration = true
+order = ["date", "pwd", "duration", "exit"]
+date_format = "relative"
+min_width = 12
+
+[ui.column.pwd]
+width = 28
+min_width = 10
+max_width = 36
+align = "left"
+truncation = "start"
+priority = 20
+
+[ui.column.duration]
+width = 8
+align = "right"
+priority = 50</code></pre><table><tr><th>Property</th><th>Values</th><th>Behavior</th></tr><tr><td><code>order</code></td><td>column names</td><td>Deterministic visible order; omitted columns are appended.</td></tr><tr><td><code>width</code></td><td>integer</td><td>Preferred width.</td></tr><tr><td><code>min_width</code>/<code>max_width</code></td><td>integer</td><td>Responsive bounds.</td></tr><tr><td><code>align</code></td><td><code>left</code>, <code>center</code>, <code>right</code></td><td>Cell alignment.</td></tr><tr><td><code>truncation</code></td><td><code>start</code>, <code>end</code>, <code>none</code></td><td>Long-value handling.</td></tr><tr><td><code>priority</code></td><td>0–255</td><td>Higher values are removed first when the row must shed metadata.</td></tr></table>
+<h2>Menus</h2><pre><code>[ui.menus.actions]
+confirm = "enter"
+next = ["down", "j"]
+previous = ["up", "k"]
+cancel = "esc"
+on_open = ["window:preview"]
+
+[[ui.menus.actions.items]]
+label = "Inspect →"
+action = "menu:inspect"
+
+[[ui.menus.actions.items]]
+label = "stderr"
+action = "wrap:stderr"
+</code></pre><p>Use <code>menu:name</code> for nested menus, <code>window:name</code> for modal windows, and <code>wrap:name</code> for pure string composition. Each item may also have <code>on_select</code> and <code>on_leave</code> action arrays.</p>
+<h2>Windows</h2><pre><code>[ui.windows.timeline]
+kind = "timeline"
+title = " Timeline · previous / selected / next "
+width = 88
+height = 16
+[ui.windows.timeline.keymap]
+close = "esc"
+</code></pre><p>Built-in kinds are <code>location</code>, <code>timeline</code>, and <code>preview</code>. Window lifecycle hooks use <code>on_open</code> and <code>on_close</code>.</p>
+<h2>Wraps</h2><pre><code>[ui.wraps.tee]
+template = "{command} | tee -a {query}"
+</code></pre><p>Templates are not shell programs. They only transform selected history text into stdout text.</p>
+<h2>Modal precedence</h2><ol><li>Active menu-local bindings.</li><li>Active window-local bindings.</li><li>Base semantic keymap.</li><li>Text input only when no modal is active.</li></ol><p class="note">This ordering keeps modal behavior deterministic and prevents a local key such as <code>esc</code> from leaking into the search editor.</p>
+<h2>Complete example</h2><p>Start from the repository's <code>examples.config.toml</code>, then change only the sections you need. Run <code>cmdscope --config ./examples.config.toml --db ./history.db</code> to validate the entire document at startup.</p>
+</main></body></html>

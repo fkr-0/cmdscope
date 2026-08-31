@@ -1,0 +1,51 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>cmdscope tutorial</title><link rel="stylesheet" href="style.css"></head><body><main>
+<nav><a href="index.html">cmdscope</a><a href="tutorial.html">Tutorial</a><a href="configuration.html">Configuration</a><a href="recipes.html">Recipes</a><a href="architecture.html">Architecture</a></nav>
+<h1>Tutorial</h1><p class="lede">From a stock Atuin database to a customized keyboard-first history workspace.</p>
+<h2 id="first-run">1. First run</h2><pre><code>cargo build --release
+./target/release/cmdscope
+./target/release/cmdscope --db "$HOME/.local/share/atuin/history.db"
+./target/release/cmdscope --db ./history.db --print-first
+./target/release/cmdscope --config ./examples.config.toml --db ./history.db</code></pre><p>Use the smoke command before entering the TUI when diagnosing a database. It exercises loading and prints the newest command without opening a full-screen terminal.</p>
+<h2>2. Search</h2><p>Type normally for fuzzy matching. Quotes make a literal stage, <code>/pattern/</code> makes a regex stage, and <code>#</code> narrows the next stage to the current candidate stream.</p><pre><code>cargo#test
+"git status"
+/ssh.*config/
+</code></pre><p>Mid-string edits stay incremental. Home/End, Left/Right, Delete, Ctrl-W, Ctrl-U and bracketed paste work directly in the search field.</p>
+<h2 id="scopes">3. Scopes</h2><table><tr><th>Mode</th><th>Meaning</th><th>Typical use</th></tr><tr><td>Global</td><td>All history</td><td>Find an old command regardless of project.</td></tr><tr><td>PWD exact</td><td>Only the current logical directory</td><td>Recall commands for the current folder.</td></tr><tr><td>PWD subdirs</td><td>Current directory and descendants</td><td>Work within a project tree.</td></tr><tr><td>Git root</td><td>All history below the repository root</td><td>Search an entire checkout while moving between subdirectories.</td></tr></table>
+<h2>4. Context review</h2><p>Open context around the selected command with the configured context key. The active fuzzy query is suspended while you inspect time-neighbors. Expand or shrink the radius, then return to search by typing or changing scope.</p>
+<h2 id="menus">5. Nested menus</h2><pre><code>[ui.menus.actions]
+[[ui.menus.actions.items]]
+label = "Inspect →"
+action = "menu:inspect"
+
+[ui.menus.inspect]
+[[ui.menus.inspect.items]]
+label = "Location"
+action = "window:location"
+[[ui.menus.inspect.items]]
+label = "Timeline"
+action = "window:timeline"</code></pre><p>The first action opens a second menu; the second menu opens a dedicated inspection window. Each modal layer owns its local navigation keys, and Escape closes only the innermost layer.</p>
+<h2>6. Lifecycle hooks</h2><pre><code>[ui.menus.actions]
+on_open = ["window:preview"]
+on_leave = []
+
+[[ui.menus.actions.items]]
+label = "Compose"
+action = "menu:wrap"
+on_select = []
+on_leave = []</code></pre><p>Hooks are ordinary validated actions. They can open another menu or window; unknown targets are rejected at startup. Keep hooks short and deterministic.</p>
+<h2>7. Wrap without execution</h2><pre><code>[ui.wraps.stderr]
+template = "{command} 2>&1"
+
+[ui.menus.wrap]
+[[ui.menus.wrap.items]]
+label = "stderr"
+action = "wrap:stderr"</code></pre><p>Wrapping produces shell text only. cmdscope never evaluates it. This preserves the boundary between selecting text and executing it.</p>
+<h2>8. Live refresh</h2><p>When launched against a real SQLite history file, cmdscope detects metadata changes during idle periods and reloads a complete snapshot. The current query is reapplied and the selected identity is retained when it still exists. If the selected row disappears, selection falls back deterministically.</p>
+<h2>9. Shell integration</h2><pre><code># stdout contains the selected command; the TUI uses stderr
+cmdscope --null
+
+# Bash widget pattern
+IFS= read -r -d '' selected &lt; &lt;(cmdscope --null)
+READLINE_LINE="$selected"
+READLINE_POINT=${#READLINE_LINE}</code></pre><p>Use the NUL form when history commands can contain trailing newlines. See the main README for Bash, Zsh, and Fish widget implementations.</p>
+<footer><a href="configuration.html">Continue to the complete configuration reference →</a></footer></main></body></html>

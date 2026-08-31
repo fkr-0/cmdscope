@@ -1,0 +1,51 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>cmdscope recipes</title><link rel="stylesheet" href="style.css"></head><body><main>
+<nav><a href="index.html">cmdscope</a><a href="tutorial.html">Tutorial</a><a href="configuration.html">Configuration</a><a href="recipes.html">Recipes</a><a href="architecture.html">Architecture</a></nav>
+<h1>Recipes</h1>
+<h2>Minimal Ctrl-R</h2><pre><code>[ui]
+history_columns = []
+preview = false
+
+[keys]
+accept = "enter"
+quit = ["esc", "ctrl-c"]
+</code></pre>
+<h2>Power-user metadata</h2><pre><code>[ui.columns]
+date = true
+pwd = true
+exit = true
+duration = true
+order = ["date", "pwd", "duration", "exit"]
+
+[ui.column.pwd]
+width = 34
+truncation = "start"
+priority = 20
+</code></pre>
+<h2>Project-focused search</h2><pre><code>[pwd]
+mode = "subdirs"
+
+[keys]
+git_root = "ctrl-r"
+pwd = "ctrl-p"
+global = "ctrl-g"
+</code></pre>
+<h2>Nested inspection</h2><pre><code>[ui.menus.actions]
+[[ui.menus.actions.items]]
+label = "Inspect →"
+action = "menu:inspect"
+
+[ui.menus.inspect]
+[[ui.menus.inspect.items]]
+label = "Location"
+action = "window:location"
+[[ui.menus.inspect.items]]
+label = "Timeline"
+action = "window:timeline"
+</code></pre>
+<h2>Safe command decoration</h2><pre><code>[ui.wraps.stderr]
+template = "{command} 2>&1"
+
+[ui.wraps.pipe]
+template = "{command} | tee -a {query}"
+</code></pre><p>These wrappers produce text for shell insertion. Keep execution outside cmdscope so the picker remains a selection/composition layer rather than an executor.</p>
+</main></body></html>

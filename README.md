@@ -422,17 +422,62 @@ When Cmdscope has a real SQLite history path, the TUI watches its metadata witho
 
 The current release extends the existing context inspector and persistent preview with configuration-defined menus/windows, nested navigation, wrap templates, and responsive column presentation without replacing the history producer layer.
 
-## Next-generation configurable workspace
+## Configurable workspace
 
-The query and history results are the primary workspace. The default presentation is newest-first and keeps the query directly adjacent to the result list. Typed columns support configurable order, width/min/max width, alignment, truncation, and responsive priority.
+The 0.3.0 workspace is configured from one TOML file. The complete copy/paste example lives in `examples.config.toml`; the release documentation expands it into a task-oriented guide at `https://cmdscope.fkr.dev/configuration.html`.
 
-Named TOML menus support nested `menu:<name>` actions, item/menu lifecycle hooks, local confirm/navigation/cancel bindings, and explicit modal precedence. Named windows support `location`, `timeline`, and `preview`; the first two expose the selected command with nearby history context. Wrap templates compose `{command}` and `{query}` into shell text without executing it.
+### Configuration model
 
-The `#` query operator performs bounded candidate-stream subfiltering (`cargo#test`). Quoted stages are literal and `/pattern/` stages use Rust regex semantics, not PCRE compatibility.
+Configuration resolves in this order:
 
-When using a real SQLite history path, the TUI performs bounded idle refreshes and preserves query and stable selection identity across complete snapshot reloads.
+1. `--config <path>`
+2. `CMDSCOPE_CONFIG=<path>`
+3. `$XDG_CONFIG_HOME/cmdscope/config.toml`
+4. built-in defaults
 
-See `examples.config.toml` for the complete columns/menu/window/wrap schema.
+Explicit configuration paths must exist. Unknown fields and invalid cross-references fail startup instead of silently falling back.
+
+### Columns
+
+The result row has four typed columns: `date`, `pwd`, `exit`, and `duration`. `ui.columns.order` controls their deterministic order. Each `ui.column.<name>` entry can set `width`, `min_width`, `max_width`, `align` (`left`, `center`, `right`), `truncation` (`start`, `end`, `none`), and `priority`. When a row does not fit, higher-priority-number columns are removed before reducing useful command width.
+
+Example:
+
+    [ui.columns]
+    date = true
+    pwd = true
+    duration = true
+    exit = false
+    order = ["date", "pwd", "duration", "exit"]
+    date_format = "relative"
+
+    [ui.column.pwd]
+    width = 30
+    max_width = 40
+    align = "left"
+    truncation = "start"
+    priority = 20
+
+### Menus and windows
+
+Named menus live below `ui.menus.<name>`. Menu items use `action = "menu:<name>"` to open nested menus or `window:<name>` to open inspection surfaces. Menu and item lifecycle hooks are lists of actions; navigation, confirmation, and cancellation bindings are local to that menu.
+
+Windows live below `ui.windows.<name>`. Built-in window kinds are `location`, `timeline`, and `preview`. A window can set its own `width`, `height`, `title`, and local key bindings.
+
+The modal precedence contract is explicit: innermost menu bindings win, then the active window's bindings, then the base semantic map; text input is disabled while a modal is open. `Esc` therefore closes the innermost modal layer instead of accidentally clearing or typing in the search field.
+
+### Wrap templates
+
+Wraps live below `ui.wraps.<name>` and contain a pure string template. `{command}` expands to the selected history command and `{query}` expands to the current search text. Wraps only compose output text; cmdscope never executes the generated command.
+
+    [ui.wraps.stderr]
+    template = "{command} 2>&1"
+
+### Live refresh
+
+When the source is a real SQLite file, cmdscope observes its metadata during idle periods. A change triggers a complete snapshot reload, then reapplies the active scope and query. Selection follows the same history identity when possible; if that entry was deleted, selection falls back deterministically.
+
+See the online [configuration reference](https://cmdscope.fkr.dev/configuration.html), [tutorial](https://cmdscope.fkr.dev/tutorial.html), and [recipes](https://cmdscope.fkr.dev/recipes.html).
 
 ## Release builds
 
