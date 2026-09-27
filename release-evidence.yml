@@ -5,11 +5,13 @@ release:
   unit: repository
   candidate_version: 0.4.0
   base_revision: 0cbb0f505c5f84fe1a4122f9a2f1d05b6da47cf8
-  target_revision: pending_release_commit
+  target_revision: f7576e74398cffaf91dd777464e147476f65fca7
+  recovery_workflow_revision: 90b4bacb784ebfa33c999736c3f6638973775de3
   members:
     - cmdscope
   revision_vector:
-    cmdscope_parent: 0cbb0f505c5f84fe1a4122f9a2f1d05b6da47cf8
+    cmdscope_release: f7576e74398cffaf91dd777464e147476f65fca7
+    release_workflow_recovery: 90b4bacb784ebfa33c999736c3f6638973775de3
 
 metadata:
   version_sources:
@@ -18,55 +20,48 @@ metadata:
   changelog: CHANGELOG.md#0.4.0
   tag:
     proposed: v0.4.0
-    created: false
-    target: pending_release_commit
+    created: true
+    target: f7576e74398cffaf91dd777464e147476f65fca7
+    pushed: true
+  github_release:
+    published: true
+    draft: false
+    prerelease: false
+    published_at: 2026-09-27T14:35:11Z
+    url: https://github.com/fkr-0/cmdscope/releases/tag/v0.4.0
 
 preflight:
   branch: main
-  dirty_paths:
-    - .github/workflows/ci-release.yml
-    - CHANGELOG.md
-    - Cargo.lock
-    - Cargo.toml
-    - README.md
-    - examples.config.toml
-    - src/app.rs
-    - src/columns.rs
-    - src/config.rs
-    - src/keymap.rs
-    - src/lib.rs
-    - src/main.rs
-    - src/terminal.rs
-    - src/tui.rs
-    - src/ui_state.rs
-    - tests/app_update_test.rs
-    - tests/cli_test.rs
-    - tests/config_advanced_test.rs
-    - tests/golden/location_window.txt
-    - tests/golden/timeline_window.txt
-    - tests/live_refresh_test.rs
-    - tests/scope_config_test.rs
-    - tests/tui_render_test.rs
-    - tests/ui_state_test.rs
-  tool_versions:
-    rust: stable
-    cargo_locking: locked
+  initial_dirty_release_candidate: true
+  repository_clean_before_tag: true
+  authority:
+    git_remote: git@github.com:fkr-0/cmdscope
+    github_account: fkr-0
+    token_scopes:
+      - repo
+      - workflow
 
 checks:
   - command: cargo fmt --all -- --check
     result: pass
+    revision: f7576e74398cffaf91dd777464e147476f65fca7
   - command: cargo clippy --all-targets --locked -- -D warnings
     result: pass
+    revision: f7576e74398cffaf91dd777464e147476f65fca7
   - command: cargo test --all-targets --locked
     result: pass
     details: 126 passed; 0 failed
+    revision: f7576e74398cffaf91dd777464e147476f65fca7
   - command: cargo doc --no-deps --locked
     result: pass
-  - command: cargo package --locked --allow-dirty
+    revision: f7576e74398cffaf91dd777464e147476f65fca7
+  - command: cargo package --locked
     result: pass
-    details: pre-commit package verification; exact clean package gate deferred until release commit
+    details: clean committed-tree package verification
+    revision: f7576e74398cffaf91dd777464e147476f65fca7
   - command: cargo build --release --locked
     result: pass
+    revision: f7576e74398cffaf91dd777464e147476f65fca7
   - command: ./target/release/cmdscope --version
     result: pass
     details: cmdscope 0.4.0
@@ -75,14 +70,41 @@ checks:
     details: real database smoke; exit 0; output 81 bytes; database hash unchanged
   - command: git diff --check
     result: pass
+  - check: independent_read_only_review
+    result: pass
+    evidence_notes:
+      - d363f823-7d69-41f6-bdf5-65558d3a0e71
+      - 6c3c13a7-74b5-4cbc-bfc0-4e6bcbe09d35
+  - check: github_actions_tag_run
+    result: partial_failure
+    run_id: 36326086603
+    details: fmt/clippy/test passed; release creation failed on invalid AWK release-note regex before assets started
+  - check: github_actions_recovery_run
+    result: pass
+    run_id: 36326344291
+    details: immutable v0.4.0 tag tested; release created; Linux, macOS, and Windows assets built and uploaded
 
 artifacts:
   - path: target/package/cmdscope-0.4.0.crate
+    role: local package verification
     size_bytes: 95967
     sha256: 4e085106216b13ef7ce37a70a406fde51f27549e5af8a1b07f805b3faddeaa1a
   - path: target/release/cmdscope
+    role: local Linux release binary
     size_bytes: 8195288
     sha256: 061b654b93e490a6b39ab796353b1f86cd5cd92bfc0601d59c357a76733d5fff
+  - name: cmdscope-macos.tar.gz
+    role: github_release_asset
+    size_bytes: 2610941
+    sha256: 9d6d4b8ded5a98190b6fc9c70c71c2612526be05c59d520889ae94621bd137d9
+  - name: cmdscope-x86_64-unknown-linux-gnu.tar.gz
+    role: github_release_asset
+    size_bytes: 3042851
+    sha256: 0c8b338b1160a2a42b1ac9932754f93878c47cfcc6019299f8f7d737ca06d1a2
+  - name: cmdscope-x86_64-pc-windows-msvc.zip
+    role: github_release_asset
+    size_bytes: 2596847
+    sha256: a665d6e816556d4ed3e3092572a16ff599e0877a5625998a29d4f743130440ad
   - path: history.db
     role: real_database_smoke_fixture
     sha256_before: fa2d2e6117569faaff5c9a450bd12b1abab1e4fd3e49848c685c5eb8d7c12c1f
@@ -90,12 +112,12 @@ artifacts:
     unchanged: true
 
 warnings:
-  - Exact cargo package --locked without --allow-dirty must be rerun after the release commit.
-  - Independent review is required before release commit/tag/push/publication.
-  - macOS and Windows release assets are produced by the GitHub Actions release matrix after tag push.
+  - The original tag-triggered release job failed only in release-note extraction; the immutable v0.4.0 tag was not moved.
+  - Recovery workflow support was added on main in 90b4bacb784ebfa33c999736c3f6638973775de3 and dispatched explicitly against v0.4.0.
+  - GitHub Actions reports an informational ubuntu-latest migration notice for October 19, 2026.
 
 side_effects:
-  pushed: false
-  published: false
+  pushed: true
+  published: true
   deployed: false
-  state: precommit_verified
+  state: released
