@@ -1,4 +1,7 @@
-use cmdscope::{Action, AppModel, HistoryEntry, HistoryStore, Msg, SearchMode};
+use cmdscope::{
+    Action, AppConfig, AppModel, ColumnId, HistoryEntry, HistoryStore, Msg, SearchMode,
+    SortDirection, SortField,
+};
 
 fn model() -> AppModel {
     AppModel::new(
@@ -29,6 +32,145 @@ fn append_action_stays_in_picker_and_updates_query() {
     model.execute_menu_action();
     assert!(!model.should_quit());
     assert_eq!(model.query(), "ls");
+}
+
+#[test]
+fn opening_configured_menu_runs_initial_item_select_lifecycle() {
+    let config = AppConfig::from_toml(
+        r#"
+        [ui.menus.actions]
+        [[ui.menus.actions.items]]
+        label = "first"
+        action = "append"
+        on_select = ["window:location"]
+
+        [ui.windows.location]
+        kind = "location"
+        "#,
+    )
+    .unwrap();
+    config.ui.validate_references().unwrap();
+    let mut model = model();
+    model.configure_interactions(config.ui.compile_menus().unwrap());
+    model.configure_windows(config.ui.windows.clone());
+
+    model.update(Msg::OpenActions);
+
+    assert_eq!(model.active_window(), Some("location"));
+}
+
+#[test]
+fn closing_configured_menu_runs_selected_item_leave_lifecycle() {
+    let config = AppConfig::from_toml(
+        r#"
+        [ui.menus.actions]
+        [[ui.menus.actions.items]]
+        label = "first"
+        action = "append"
+        on_leave = ["window:location"]
+
+        [ui.windows.location]
+        kind = "location"
+        "#,
+    )
+    .unwrap();
+    config.ui.validate_references().unwrap();
+    let mut model = model();
+    model.configure_interactions(config.ui.compile_menus().unwrap());
+    model.configure_windows(config.ui.windows.clone());
+    model.update(Msg::OpenActions);
+
+    model.close_modal();
+
+    assert_eq!(model.active_window(), Some("location"));
+}
+
+#[test]
+fn direct_item_activation_runs_selected_item_leave_lifecycle() {
+    let config = AppConfig::from_toml(
+        r#"
+        [ui.menus.actions]
+        [[ui.menus.actions.items]]
+        label = "append"
+        key = "a"
+        action = "append"
+        on_leave = ["window:location"]
+
+        [ui.windows.location]
+        kind = "location"
+        "#,
+    )
+    .unwrap();
+    config.ui.validate_references().unwrap();
+    let mut model = model();
+    model.configure_interactions(config.ui.compile_menus().unwrap());
+    model.configure_windows(config.ui.windows.clone());
+    model.update(Msg::OpenActions);
+
+    model.execute_menu_item(0);
+
+    assert_eq!(model.active_window(), Some("location"));
+    assert_eq!(model.query(), "ls");
+}
+
+#[test]
+fn configured_menu_navigation_runs_item_leave_then_select_lifecycle() {
+    let config = AppConfig::from_toml(
+        r#"
+        [ui.menus.actions]
+        next = "down"
+        previous = "up"
+        [[ui.menus.actions.items]]
+        label = "first"
+        action = "append"
+        on_leave = ["window:location"]
+        [[ui.menus.actions.items]]
+        label = "second"
+        action = "append"
+        on_select = ["window:timeline"]
+
+        [ui.windows.location]
+        kind = "location"
+        [ui.windows.timeline]
+        kind = "timeline"
+        "#,
+    )
+    .unwrap();
+    config.ui.validate_references().unwrap();
+    let mut model = model();
+    model.configure_interactions(config.ui.compile_menus().unwrap());
+    model.configure_windows(config.ui.windows.clone());
+    model.update(Msg::OpenActions);
+
+    model.handle_modal_next();
+
+    assert_eq!(model.active_window(), Some("timeline"));
+}
+
+#[test]
+fn direct_menu_item_activation_targets_item() {
+    let config = AppConfig::from_toml(
+        r#"
+        [ui.menus.actions]
+        [[ui.menus.actions.items]]
+        label = "append"
+        action = "append"
+        [[ui.menus.actions.items]]
+        label = "insert"
+        key = "i"
+        action = "insert+exit"
+        "#,
+    )
+    .unwrap();
+    config.ui.validate_references().unwrap();
+    let mut model = model();
+    model.configure_interactions(config.ui.compile_menus().unwrap());
+    model.update(Msg::OpenActions);
+
+    model.execute_menu_item(1);
+
+    assert!(model.should_quit());
+    assert_eq!(model.accepted_command(), Some("ls"));
 }
 
 #[test]
@@ -222,6 +364,56 @@ fn context_mode_clears_query_dependence_but_keeps_selected_result() {
 
     assert!(model.in_context_mode());
     assert_eq!(model.visible_commands(), vec!["cargo test", "ls"]);
+}
+
+#[test]
+fn column_customization_reorders_toggles_and_tracks_persistent_revision() {
+    let mut model = model();
+    assert_eq!(model.focused_column(), ColumnId::Date);
+    assert_eq!(model.ui_state_revision(), 0);
+
+    model.update(Msg::ColumnNext);
+    assert_eq!(model.focused_column(), ColumnId::Pwd);
+    assert_eq!(model.ui_state_revision(), 0);
+
+    model.update(Msg::ColumnMoveLeft);
+    assert_eq!(
+        model.columns().normalized_order(),
+        vec![
+            ColumnId::Pwd,
+            ColumnId::Date,
+            ColumnId::Exit,
+            ColumnId::Duration,
+        ]
+    );
+    assert_eq!(model.ui_state_revision(), 1);
+
+    model.update(Msg::ColumnToggle);
+    assert!(!model.columns().pwd);
+    assert_eq!(model.ui_state_revision(), 2);
+}
+
+#[test]
+fn sorting_preserves_selected_identity_while_direction_changes() {
+    let mut model = model();
+    let selected = model.selected_id().unwrap().to_string();
+
+    model.update(Msg::SortByColumn);
+    assert_eq!(model.sort_field(), SortField::Date);
+    assert_eq!(model.sort_direction(), SortDirection::Descending);
+    assert_eq!(
+        model.visible_commands(),
+        vec!["ls", "cargo test", "git status"]
+    );
+    assert_eq!(model.selected_id(), Some(selected.as_str()));
+
+    model.update(Msg::SortDirection);
+    assert_eq!(model.sort_direction(), SortDirection::Ascending);
+    assert_eq!(
+        model.visible_commands(),
+        vec!["git status", "cargo test", "ls"]
+    );
+    assert_eq!(model.selected_id(), Some(selected.as_str()));
 }
 
 #[test]

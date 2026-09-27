@@ -373,9 +373,12 @@ fn history_title(model: &AppModel) -> String {
         " 0 matches ".to_string()
     } else {
         format!(
-            " {}/{} matches ",
+            " {}/{} matches · col {} · sort {}{} ",
             model.selected_index() + 1,
-            model.visible_len()
+            model.visible_len(),
+            model.focused_column(),
+            model.sort_field(),
+            model.sort_direction().symbol()
         )
     }
 }

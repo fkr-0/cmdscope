@@ -280,7 +280,7 @@ fn config_loads_shortcuts_and_pwd_semantics_from_toml() {
         context_expand = "alt-]"
         context_shrink = "alt-["
         toggle_pwd_mode = "ctrl-s"
-        select_next = ["down", "ctrl-j"]
+        select_next = ["up", "ctrl-j"]
 
         [pwd]
         mode = "subdirs"
@@ -290,7 +290,7 @@ fn config_loads_shortcuts_and_pwd_semantics_from_toml() {
 
     assert_eq!(config.keys.global, vec!["ctrl-g"]);
     assert_eq!(config.keys.context, vec!["ctrl-o"]);
-    assert_eq!(config.keys.select_next, vec!["down", "ctrl-j"]);
+    assert_eq!(config.keys.select_next, vec!["up", "ctrl-j"]);
     assert_eq!(config.pwd.mode, PwdMatchMode::IncludeSubdirs);
     config.compile_keymap().unwrap();
 }

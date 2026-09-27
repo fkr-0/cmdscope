@@ -15,7 +15,9 @@ It is designed for shell `Ctrl-R` usage: fuzzy-filter commands, optionally restr
 - Atuin `history` table support, including `cwd` and `deleted_at` filtering.
 - Same-directory mode for context-sensitive command recall.
 - Context mode that ignores the active filter string and shows commands around the selected result in time order.
-- Visible selected-row marker plus toggleable history metadata columns such as date and pwd.
+- Visible selected-row marker plus operator-reorderable and toggleable history metadata columns such as date, pwd, exit, and duration.
+- Runtime sorting by relevance, date, pwd, exit, duration, or command, with explicit ascending/descending control and stable selection identity.
+- Non-blocking background dispatch for live SQLite snapshot reloads and atomic UI-state persistence, keeping input/redraw responsive.
 
 ## Database schema
 
@@ -71,6 +73,11 @@ Override database discovery explicitly when needed:
 Use a custom config file:
 
     cmdscope --config ./examples.config.toml --db ./history.db
+
+Override presentation for one invocation (environment variables use the same highest-level runtime layer, with CLI winning over environment):
+
+    CMDSCOPE_COLUMNS=pwd,date CMDSCOPE_SORT=date CMDSCOPE_SORT_DIRECTION=ascending cmdscope
+    cmdscope --columns pwd,date --sort date --sort-direction descending
 
 ## TUI layout
 
@@ -138,6 +145,11 @@ zero-width format characters, and the typed query receive the same treatment.
 | Ctrl-R | show Git-root history |
 | Ctrl-S | toggle exact vs subtree pwd matching |
 | Alt-M | toggle history metadata columns |
+| Alt-C | focus the next configurable metadata column |
+| Alt-Left / Alt-Right | move the focused column left / right |
+| Alt-V | show/hide the focused column |
+| Alt-S | sort by the focused column |
+| Alt-R | toggle ascending / descending sort direction |
 | Ctrl-O | toggle time-neighbor context for the selected command |
 | Alt-] | expand context radius |
 | Alt-[ | shrink context radius |
@@ -219,16 +231,17 @@ The tests use TDD-friendly pure model/store behavior so the interactive terminal
 
 ## Config
 
-`cmdscope` resolves configuration in this order:
+`cmdscope` resolves presentation settings from lowest to highest precedence:
 
-1. `--config <path>`
-2. `CMDSCOPE_CONFIG=<path>`
-3. `$XDG_CONFIG_HOME/cmdscope/config.toml`
-4. built-in defaults if no config file exists
+1. built-in defaults
+2. persisted operator UI state at `$XDG_DATA_HOME/cmdscope/ui-state.toml` (falling back to `$HOME/.local/share/cmdscope/ui-state.toml`)
+3. the config file (`$XDG_CONFIG_HOME/cmdscope/config.toml`, or the explicit `CMDSCOPE_CONFIG` / `--config` path)
+4. environment overrides (`CMDSCOPE_COLUMNS`, `CMDSCOPE_SORT`, `CMDSCOPE_SORT_DIRECTION`)
+5. command-line overrides (`--columns`, `--sort`, `--sort-direction`)
 
-Paths supplied explicitly through `--config` or `CMDSCOPE_CONFIG` are required;
-a missing or unreadable explicit file is an error. Unknown TOML fields are also
-rejected so misspelled action names cannot silently fall back to defaults.
+For choosing the config *file path*, `--config` wins over `CMDSCOPE_CONFIG`, which wins over the XDG config path. Paths supplied explicitly through `--config` or `CMDSCOPE_CONFIG` are required; a missing or unreadable explicit file is an error. Unknown TOML fields are also rejected so misspelled action names cannot silently fall back to defaults.
+
+Interactive column order/visibility and sort changes are persisted asynchronously and atomically to the XDG data state file. The state file contains only mutable presentation state; it does not copy the complete application configuration, and higher-precedence config/environment/CLI values continue to override it on startup.
 
 All non-text shortcuts are configurable through TOML:
 
@@ -242,6 +255,12 @@ All non-text shortcuts are configurable through TOML:
     context_shrink = "alt-["
     toggle_pwd_mode = "ctrl-s"
     toggle_metadata = "alt-m"
+    column_next = "alt-c"
+    column_move_left = "alt-left"
+    column_move_right = "alt-right"
+    column_toggle = "alt-v"
+    sort_by_column = "alt-s"
+    sort_direction = "alt-r"
     select_next = ["down", "ctrl-n"]
     select_previous = ["up", "ctrl-k"]
     accept = "enter"
@@ -264,6 +283,11 @@ All non-text shortcuts are configurable through TOML:
     # Columns shown when metadata is visible. Supported: "date", "pwd".
     # Use an empty list for command-only rows by default.
     history_columns = ["date", "pwd"]
+
+    [ui.columns]
+    order = ["date", "pwd", "duration", "exit"]
+    sort_by = "relevance"
+    sort_direction = "descending"
 
 ### Key token format
 

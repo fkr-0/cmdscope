@@ -5,6 +5,39 @@ All notable changes to this project are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html/).
 
+## [0.4.0] - 2026-09-27
+
+### Added
+
+- Added keyboard-driven column focus, visibility, and left/right reordering for `date`, `pwd`, `exit`, and `duration`, with the active column shown directly in the history title.
+- Added explicit sorting by relevance, date, pwd, exit, duration, or command with ascending/descending direction, deterministic tie-breaking, and selected-entry identity preserved across resorting.
+- Added persistent operator UI state at `$XDG_DATA_HOME/cmdscope/ui-state.toml` (falling back to `$HOME/.local/share/cmdscope/ui-state.toml`) for column order/visibility and sort state.
+- Added runtime presentation overrides through `CMDSCOPE_COLUMNS`, `CMDSCOPE_SORT`, `CMDSCOPE_SORT_DIRECTION`, `--columns`, `--sort`, and `--sort-direction`.
+- Added direct per-item menu activation plus explicit `on_select`/`on_leave` lifecycle coverage and visual golden coverage for location and timeline inspection windows.
+
+### Changed
+
+- Added a non-blocking runtime dispatcher so changed SQLite snapshots and UI-state writes run off the terminal input/redraw loop while preserving the 150 ms refresh cadence.
+- Defined presentation precedence as built-in defaults < persisted XDG UI state < config file < environment variables < command-line arguments.
+- Preserved selection identity across live refresh and sort changes, with deterministic fallback when a selected history entry disappears.
+- GitHub tag releases now use this version's curated changelog section as the release body instead of generic generated notes; the existing Linux, macOS, and Windows integration artifacts remain attached by the release matrix.
+
+### Fixed
+
+- Prevented sustained ready terminal input from starving live-history refresh deadlines.
+- Prevented exact-default CLI presentation overrides from being replaced later by the legacy `history_columns` fallback.
+- Rejected duplicate column-order entries and conflicting or duplicate per-item activation keys at startup.
+
+### Verification
+
+- `cargo fmt --all -- --check`
+- `cargo clippy --all-targets --locked -- -D warnings`
+- `cargo test --all-targets --locked`
+- `cargo doc --no-deps --locked`
+- `cargo package --locked`
+- `cargo build --release --locked`
+- real-database smoke test and release-workflow artifact verification
+
 ## [0.3.0] - 2026-08-31
 
 ### Added

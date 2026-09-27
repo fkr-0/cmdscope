@@ -24,6 +24,7 @@ fn advanced_columns_and_nested_menus_parse_and_compile() {
         confirm = "ctrl-y"
         [[ui.menus.more.items]]
         label = "timeline"
+        key = "t"
         action = "window:timeline"
 
         [ui.windows.timeline]
@@ -42,6 +43,41 @@ fn advanced_columns_and_nested_menus_parse_and_compile() {
     );
     config.ui.validate_references().unwrap();
     assert_eq!(config.ui.compile_menus().unwrap().len(), 2);
+}
+
+#[test]
+fn item_activation_keys_reject_menu_conflicts_and_duplicates() {
+    let conflict = AppConfig::from_toml(
+        r#"
+        [ui.menus.actions]
+        [[ui.menus.actions.items]]
+        label = "conflict"
+        key = "j"
+        action = "append"
+        "#,
+    )
+    .unwrap();
+    let error = conflict.ui.validate_references().unwrap_err().to_string();
+    assert!(error.contains("conflicts with a menu binding"), "{error}");
+
+    let duplicate = AppConfig::from_toml(
+        r#"
+        [ui.menus.actions]
+        next = "down"
+        previous = "up"
+        [[ui.menus.actions.items]]
+        label = "first"
+        key = "x"
+        action = "append"
+        [[ui.menus.actions.items]]
+        label = "second"
+        key = "x"
+        action = "append"
+        "#,
+    )
+    .unwrap();
+    let error = duplicate.ui.validate_references().unwrap_err().to_string();
+    assert!(error.contains("duplicates another item key"), "{error}");
 }
 
 #[test]

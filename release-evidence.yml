@@ -1,129 +1,101 @@
-version: 1
+schema: release-evidence/v1
+schema_version: 1
+
 release:
   unit: repository
-  project: cmdscope
-  date: 2026-08-31
-  phase: 4
-  phase2_authority:
-    path: /home/user/code/chatgpt-tooling/prolonged/cmdscope/phase2-20260829T181111.md
-    sha256: f37b3f582cf68c0dd11eca07a8db5c4be79886822c43ba751573d205c9121344
-  qualified_revision: 1b01867e7670bc160882700a88f8a09a9b2ff5d0
-  origin_main: 2b4689655aa3cb8f5737dc0e2c0e8906723e4031
-  current_cargo_version: 0.3.0
-  changelog_latest_release: 0.3.0
-  changelog_has_unreleased_changes: false
-  local_tags:
-    - v0.3.0
-    - v0.0.1
-  remote_tags:
-    - v0.3.0
-    - v0.0.1
-  release_identity_status: QUALIFIED_RELEASE
-  candidate_version: 0.3.0
-  proposed_tag: v0.3.0
-  decision_required: >-
-    Release decision completed: 0.3.0 is the approved minor release and v0.3.0
-    targets commit 1b01867e7670bc160882700a88f8a09a9b2ff5d0.
-  tag_created: true
-  push_state: main_and_tag_pushed
-  publish_state: remote_release_created
-  deploy_state: github_pages_verified
-  remote_release_state: created
+  candidate_version: 0.4.0
+  base_revision: 0cbb0f505c5f84fe1a4122f9a2f1d05b6da47cf8
+  target_revision: pending_release_commit
+  members:
+    - cmdscope
+  revision_vector:
+    cmdscope_parent: 0cbb0f505c5f84fe1a4122f9a2f1d05b6da47cf8
 
 metadata:
-  phase3_changes:
-    - Cargo.toml: exclude release-evidence.yml and tasks.yml from Cargo packages
-    - README.md: replace stale v0.2.2 tag example with an identity-neutral VERSION example
-    - tasks.yml: refresh current verification and blocked identity state
-    - release-evidence.yml: replace stale 2026-07-26 release evidence with Phase-3 evidence
-  package_evidence_excluded:
-    - release-evidence.yml
-    - tasks.yml
-  dependency_changes: none
-  lockfile_changed: false
-  workflow_changed: false
+  version_sources:
+    - Cargo.toml: 0.4.0
+    - Cargo.lock: 0.4.0
+  changelog: CHANGELOG.md#0.4.0
+  tag:
+    proposed: v0.4.0
+    created: false
+    target: pending_release_commit
 
-ci_parity:
-  workflow: .github/workflows/ci-release.yml
-  checks:
-    - command: cargo fmt --all -- --check
-      exit_code: 0
-    - command: cargo clippy --all-targets --locked -- -D warnings
-      exit_code: 0
-    - command: cargo test --all-targets --locked
-      exit_code: 0
-      result: 84 passed; 0 failed
-  release_matrix:
-    - os: ubuntu-latest
-      asset: cmdscope-x86_64-unknown-linux-gnu.tar.gz
-      archive: tar.gz
-      binary: cmdscope
-    - os: macos-latest
-      asset: cmdscope-macos.tar.gz
-      archive: tar.gz
-      binary: cmdscope
-    - os: windows-latest
-      asset: cmdscope-x86_64-pc-windows-msvc.zip
-      archive: zip
-      binary: cmdscope.exe
-  documented_asset_names_match_workflow: true
-  documented_payload_matches_workflow: true
+preflight:
+  branch: main
+  dirty_paths:
+    - .github/workflows/ci-release.yml
+    - CHANGELOG.md
+    - Cargo.lock
+    - Cargo.toml
+    - README.md
+    - examples.config.toml
+    - src/app.rs
+    - src/columns.rs
+    - src/config.rs
+    - src/keymap.rs
+    - src/lib.rs
+    - src/main.rs
+    - src/terminal.rs
+    - src/tui.rs
+    - src/ui_state.rs
+    - tests/app_update_test.rs
+    - tests/cli_test.rs
+    - tests/config_advanced_test.rs
+    - tests/golden/location_window.txt
+    - tests/golden/timeline_window.txt
+    - tests/live_refresh_test.rs
+    - tests/scope_config_test.rs
+    - tests/tui_render_test.rs
+    - tests/ui_state_test.rs
+  tool_versions:
+    rust: stable
+    cargo_locking: locked
 
-packaging:
-  command: cargo package --locked
-  exit_code: 0
-  verified_files: 29
-  result: package built and verified successfully
-  accidental_evidence_inclusion: false
-  excluded_or_absent:
-    - .ws-bridge
-    - '*.db'
-    - target
-    - release-evidence.yml
-    - tasks.yml
+checks:
+  - command: cargo fmt --all -- --check
+    result: pass
+  - command: cargo clippy --all-targets --locked -- -D warnings
+    result: pass
+  - command: cargo test --all-targets --locked
+    result: pass
+    details: 126 passed; 0 failed
+  - command: cargo doc --no-deps --locked
+    result: pass
+  - command: cargo package --locked --allow-dirty
+    result: pass
+    details: pre-commit package verification; exact clean package gate deferred until release commit
+  - command: cargo build --release --locked
+    result: pass
+  - command: ./target/release/cmdscope --version
+    result: pass
+    details: cmdscope 0.4.0
+  - command: ./target/release/cmdscope --config ./examples.config.toml --db ./history.db --print-first
+    result: pass
+    details: real database smoke; exit 0; output 81 bytes; database hash unchanged
+  - command: git diff --check
+    result: pass
 
-local_linux_asset:
-  build_command: cargo build --release --locked
-  build_exit_code: 0
-  evidence_dir: .ws-bridge/evidence/cmdscope-phase3-20260829T1915
-  archive:
-    path: target/package/cmdscope-0.3.0.crate
-    size_bytes: 84285
-    sha256: 3b34d0019b85eb084fd6514e8853e0044719d23dee3ad49f09bc98b3727abcf2
-    contents:
-      - cmdscope source package
-      - README.md
-      - CHANGELOG.md
-      - examples.config.toml
-  binary:
-    path: target/release/cmdscope
-    size_bytes: 5091192
-    sha256: 8361bfdb3bfb4719671ccc92a6458afa2f79f90c86988b9d03e8febd1f7e8e32
-  smoke:
-    version_command: extracted/cmdscope --version
-    version_result: cmdscope 0.3.0
-    print_first_command: extracted/cmdscope --config ./examples.config.toml --db ./history.db --print-first
-    print_first_exit_code: 0
-    print_first_bytes: 83
-    print_first_sha256: e38d00f4cc07f2c6814822b843738c2c55ed903a9a905133dbb1ca0fb1f80ee0
-    fixture_sha256_before: fa2d2e6117569faaff5c9a450bd12b1abab1e4fd3e49848c685c5eb8d7c12c1f
-    fixture_sha256_after: fa2d2e6117569faaff5c9a450bd12b1abab1e4fd3e49848c685c5eb8d7c12c1f
-    fixture_unchanged: true
+artifacts:
+  - path: target/package/cmdscope-0.4.0.crate
+    size_bytes: 95967
+    sha256: 4e085106216b13ef7ce37a70a406fde51f27549e5af8a1b07f805b3faddeaa1a
+  - path: target/release/cmdscope
+    size_bytes: 8195288
+    sha256: 061b654b93e490a6b39ab796353b1f86cd5cd92bfc0601d59c357a76733d5fff
+  - path: history.db
+    role: real_database_smoke_fixture
+    sha256_before: fa2d2e6117569faaff5c9a450bd12b1abab1e4fd3e49848c685c5eb8d7c12c1f
+    sha256_after: fa2d2e6117569faaff5c9a450bd12b1abab1e4fd3e49848c685c5eb8d7c12c1f
+    unchanged: true
 
-reused_phase2_evidence:
-  documentation:
-    command: cargo doc --no-deps
-    result: passed
-    justification: Rust source is unchanged in Phase 3
-  benchmark:
-    command: cargo run --release --example filter_bench -- 100000
-    rows: 100000
-    legacy_total_us: 553750
-    incremental_total_us: 347838
-    sequence_speedup: 2.20
-    justification: search implementation is unchanged in Phase 3
+warnings:
+  - Exact cargo package --locked without --allow-dirty must be rerun after the release commit.
+  - Independent review is required before release commit/tag/push/publication.
+  - macOS and Windows release assets are produced by the GitHub Actions release matrix after tag push.
 
-limitations:
-  - Release identity is intentionally unresolved; no version bump or tag was guessed.
-  - macOS and Windows release assets were not built locally; GitHub Actions owns those matrix builds.
-  - No push, publish, deployment, remote release creation, or tag mutation was performed.
+side_effects:
+  pushed: false
+  published: false
+  deployed: false
+  state: precommit_verified

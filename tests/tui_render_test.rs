@@ -19,6 +19,94 @@ fn model() -> AppModel {
     )
 }
 
+fn window_model(config: &AppConfig) -> AppModel {
+    AppModel::new_with_config(
+        HistoryStore::from_entries(vec![
+            HistoryEntry::new("1", 1_700_000_000, 0, "git status", "/repo", "s1", "host"),
+            HistoryEntry::new(
+                "2",
+                1_700_086_400,
+                0,
+                "cargo test",
+                "/repo/src",
+                "s1",
+                "host",
+            ),
+            HistoryEntry::new("3", 1_700_172_800, 1, "make test", "/repo", "s2", "host"),
+            HistoryEntry::new(
+                "4",
+                1_700_259_200,
+                0,
+                "cargo clippy",
+                "/repo/src",
+                "s2",
+                "host",
+            ),
+        ]),
+        Some("/repo/src".to_string()),
+        None,
+        &config.ui.effective_columns(),
+        config.pwd.mode,
+    )
+}
+
+fn window_config() -> AppConfig {
+    AppConfig::from_toml(
+        r#"
+        [ui.columns]
+        date_format = "date"
+
+        [ui.windows.location]
+        kind = "location"
+        title = " Location "
+        width = 54
+        height = 9
+
+        [ui.windows.timeline]
+        kind = "timeline"
+        title = " Timeline "
+        width = 54
+        height = 9
+        "#,
+    )
+    .unwrap()
+}
+
+fn normalize_golden(text: &str) -> String {
+    let version = format!("cmdscope v{}", env!("CARGO_PKG_VERSION"));
+    text.replace(&version, "cmdscope v<VERSION>")
+        .lines()
+        .map(str::trim_end)
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim_end()
+        .to_string()
+}
+
+#[test]
+fn location_window_matches_visual_golden() {
+    let config = window_config();
+    let mut model = window_model(&config);
+    model.configure_windows(config.ui.windows.clone());
+    model.open_window("location");
+
+    let actual = normalize_golden(&rendered_text_at(&model, &config, 72, 16).0);
+    let expected = normalize_golden(include_str!("golden/location_window.txt"));
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn timeline_window_matches_visual_golden() {
+    let config = window_config();
+    let mut model = window_model(&config);
+    model.configure_windows(config.ui.windows.clone());
+    model.open_window("timeline");
+
+    let actual = normalize_golden(&rendered_text_at(&model, &config, 72, 16).0);
+    let expected = normalize_golden(include_str!("golden/timeline_window.txt"));
+    assert_eq!(actual, expected);
+}
+
 #[test]
 fn query_uses_a_real_cursor_and_keeps_it_visible_while_scrolling() {
     let mut model = model();
@@ -204,7 +292,7 @@ fn empty_results_render_without_an_invalid_selection() {
 }
 
 #[test]
-fn context_view_renders_neighbor_dates_in_chronological_order_across_sessions() {
+fn context_view_renders_neighbor_dates_newest_first_across_sessions() {
     let mut model = AppModel::new(
         HistoryStore::from_entries(vec![
             HistoryEntry::new("1", 1_700_000_000, 0, "first", "/repo", "s1", "h"),
@@ -222,7 +310,7 @@ fn context_view_renders_neighbor_dates_in_chronological_order_across_sessions() 
     let second = text.find("2023-11-15").expect("second date");
     let third = text.find("2023-11-16").expect("third date");
 
-    assert!(first < second && second < third, "{text}");
+    assert!(third < second && second < first, "{text}");
 }
 
 #[test]

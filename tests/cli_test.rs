@@ -10,7 +10,10 @@ fn version_flag_reports_the_package_version() {
         .arg("--version")
         .assert()
         .success()
-        .stdout(predicate::str::contains("cmdscope 0.3.0"));
+        .stdout(predicate::str::contains(format!(
+            "cmdscope {}",
+            env!("CARGO_PKG_VERSION")
+        )));
 }
 
 #[test]

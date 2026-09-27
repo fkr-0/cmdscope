@@ -1,4 +1,9 @@
-use crate::{action::Action, columns::ColumnId, keymap::KeyMap};
+use crate::{
+    action::Action,
+    columns::ColumnId,
+    keymap::KeyMap,
+    ui_state::{SortDirection, SortField, UiState},
+};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Deserializer};
 use std::{collections::BTreeMap, io::ErrorKind, path::Path};
@@ -98,6 +103,33 @@ pub struct KeyConfig {
         deserialize_with = "one_or_many"
     )]
     pub toggle_duration: Vec<String>,
+    #[serde(default = "default_key_column_next", deserialize_with = "one_or_many")]
+    pub column_next: Vec<String>,
+    #[serde(
+        default = "default_key_column_move_left",
+        deserialize_with = "one_or_many"
+    )]
+    pub column_move_left: Vec<String>,
+    #[serde(
+        default = "default_key_column_move_right",
+        deserialize_with = "one_or_many"
+    )]
+    pub column_move_right: Vec<String>,
+    #[serde(
+        default = "default_key_column_toggle",
+        deserialize_with = "one_or_many"
+    )]
+    pub column_toggle: Vec<String>,
+    #[serde(
+        default = "default_key_sort_by_column",
+        deserialize_with = "one_or_many"
+    )]
+    pub sort_by_column: Vec<String>,
+    #[serde(
+        default = "default_key_sort_direction",
+        deserialize_with = "one_or_many"
+    )]
+    pub sort_direction: Vec<String>,
     #[serde(default = "default_key_select_next", deserialize_with = "one_or_many")]
     pub select_next: Vec<String>,
     #[serde(
@@ -144,6 +176,12 @@ impl Default for KeyConfig {
             toggle_pwd: default_key_toggle_pwd(),
             toggle_exit: default_key_toggle_exit(),
             toggle_duration: default_key_toggle_duration(),
+            column_next: default_key_column_next(),
+            column_move_left: default_key_column_move_left(),
+            column_move_right: default_key_column_move_right(),
+            column_toggle: default_key_column_toggle(),
+            sort_by_column: default_key_sort_by_column(),
+            sort_direction: default_key_sort_direction(),
             select_next: default_key_select_next(),
             select_previous: default_key_select_previous(),
             accept: default_key_accept(),
@@ -213,6 +251,10 @@ pub struct ColumnConfig {
     pub min_width: usize,
     #[serde(default)]
     pub order: Vec<ColumnId>,
+    #[serde(default)]
+    pub sort_by: SortField,
+    #[serde(default)]
+    pub sort_direction: SortDirection,
 }
 
 impl Default for ColumnConfig {
@@ -230,6 +272,8 @@ impl Default for ColumnConfig {
                 ColumnId::Exit,
                 ColumnId::Duration,
             ],
+            sort_by: SortField::Relevance,
+            sort_direction: SortDirection::Descending,
         }
     }
 }
@@ -249,7 +293,24 @@ impl ColumnConfig {
         if self.min_width < 4 {
             anyhow::bail!("column min_width must be at least 4");
         }
+        let mut seen = Vec::new();
+        for &column in &self.order {
+            if seen.contains(&column) {
+                anyhow::bail!("column {column} appears more than once in ui.columns.order");
+            }
+            seen.push(column);
+        }
         Ok(())
+    }
+
+    pub fn normalized_order(&self) -> Vec<ColumnId> {
+        let mut order = self.order.clone();
+        for column in ColumnId::ALL {
+            if !order.contains(&column) {
+                order.push(column);
+            }
+        }
+        order
     }
 
     pub fn visible(&self) -> Vec<ColumnId> {
@@ -262,27 +323,7 @@ impl ColumnConfig {
         .into_iter()
         .flatten()
         .collect::<std::collections::HashSet<_>>();
-        let mut order = if self.order.is_empty() {
-            vec![
-                ColumnId::Date,
-                ColumnId::Pwd,
-                ColumnId::Exit,
-                ColumnId::Duration,
-            ]
-        } else {
-            self.order.clone()
-        };
-        for column in [
-            ColumnId::Date,
-            ColumnId::Pwd,
-            ColumnId::Exit,
-            ColumnId::Duration,
-        ] {
-            if !order.contains(&column) {
-                order.push(column);
-            }
-        }
-        order
+        self.normalized_order()
             .into_iter()
             .filter(|column| enabled.contains(column))
             .collect()
@@ -475,25 +516,45 @@ impl UiConfig {
     pub fn validate_references(&self) -> Result<()> {
         self.columns.validate()?;
         for (name, menu) in &self.menus {
+            let modal_bindings = menu
+                .confirm
+                .iter()
+                .chain(menu.next.iter())
+                .chain(menu.previous.iter())
+                .chain(menu.cancel.iter())
+                .map(|binding| {
+                    binding
+                        .parse::<crate::KeyChord>()
+                        .with_context(|| format!("menu {name:?} binding {binding:?}"))
+                })
+                .collect::<Result<Vec<_>>>()?;
+            let mut item_bindings = Vec::new();
             for item in &menu.items {
                 validate_action(&item.action, self).with_context(|| format!("menu {name:?}"))?;
+                if let Some(binding) = &item.key {
+                    let chord = binding.parse::<crate::KeyChord>().with_context(|| {
+                        format!("menu {name:?} item {:?} key {binding:?}", item.label)
+                    })?;
+                    if modal_bindings.contains(&chord) {
+                        anyhow::bail!(
+                            "menu {name:?} item {:?} key {binding:?} conflicts with a menu binding",
+                            item.label
+                        );
+                    }
+                    if item_bindings.contains(&chord) {
+                        anyhow::bail!(
+                            "menu {name:?} item {:?} key {binding:?} duplicates another item key",
+                            item.label
+                        );
+                    }
+                    item_bindings.push(chord);
+                }
                 for action in item.on_select.iter().chain(item.on_leave.iter()) {
                     validate_action(action, self).with_context(|| format!("menu {name:?}"))?;
                 }
             }
             for action in menu.on_open.iter().chain(menu.on_leave.iter()) {
                 validate_action(action, self).with_context(|| format!("menu {name:?}"))?;
-            }
-            for binding in menu
-                .confirm
-                .iter()
-                .chain(menu.next.iter())
-                .chain(menu.previous.iter())
-                .chain(menu.cancel.iter())
-            {
-                binding
-                    .parse::<crate::KeyChord>()
-                    .with_context(|| format!("menu {name:?} binding {binding:?}"))?;
             }
         }
         for (name, window) in &self.windows {
@@ -531,6 +592,74 @@ fn default_preview() -> bool {
     true
 }
 
+#[derive(Debug, Deserialize, Default)]
+struct AppConfigLayer {
+    #[serde(default)]
+    ui: Option<UiConfigLayer>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct UiConfigLayer {
+    #[serde(default)]
+    history_columns: Option<Vec<HistoryColumn>>,
+    #[serde(default)]
+    columns: Option<ColumnConfigLayer>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct ColumnConfigLayer {
+    #[serde(default)]
+    date: Option<bool>,
+    #[serde(default)]
+    pwd: Option<bool>,
+    #[serde(default)]
+    exit: Option<bool>,
+    #[serde(default)]
+    duration: Option<bool>,
+    #[serde(default)]
+    date_format: Option<DateFormat>,
+    #[serde(default)]
+    min_width: Option<usize>,
+    #[serde(default)]
+    order: Option<Vec<ColumnId>>,
+    #[serde(default)]
+    sort_by: Option<SortField>,
+    #[serde(default)]
+    sort_direction: Option<SortDirection>,
+}
+
+impl ColumnConfigLayer {
+    fn apply_to(self, columns: &mut ColumnConfig) {
+        if let Some(value) = self.date {
+            columns.date = value;
+        }
+        if let Some(value) = self.pwd {
+            columns.pwd = value;
+        }
+        if let Some(value) = self.exit {
+            columns.exit = value;
+        }
+        if let Some(value) = self.duration {
+            columns.duration = value;
+        }
+        if let Some(value) = self.date_format {
+            columns.date_format = value;
+        }
+        if let Some(value) = self.min_width {
+            columns.min_width = value;
+        }
+        if let Some(value) = self.order {
+            columns.order = value;
+        }
+        if let Some(value) = self.sort_by {
+            columns.sort_by = value;
+        }
+        if let Some(value) = self.sort_direction {
+            columns.sort_direction = value;
+        }
+    }
+}
+
 /// Top-level TOML configuration.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
@@ -548,11 +677,46 @@ impl AppConfig {
         toml::from_str(input).context("failed to parse cmdscope config")
     }
 
+    pub fn from_toml_layered(input: &str, state: Option<&UiState>) -> Result<Self> {
+        let mut config = Self::from_toml(input)?;
+        let layer: AppConfigLayer =
+            toml::from_str(input).context("failed to inspect cmdscope config overrides")?;
+        let mut columns = ColumnConfig::default();
+        if let Some(state) = state {
+            state.apply_to(&mut columns)?;
+        }
+        if let Some(ui) = layer.ui {
+            if let Some(history_columns) = ui.history_columns {
+                columns.date = history_columns.contains(&HistoryColumn::Date);
+                columns.pwd = history_columns.contains(&HistoryColumn::Pwd);
+            }
+            if let Some(layer) = ui.columns {
+                layer.apply_to(&mut columns);
+            }
+        }
+        columns.validate()?;
+        config.ui.columns = columns;
+        Ok(config)
+    }
+
+    pub fn from_state(state: Option<&UiState>) -> Result<Self> {
+        let mut config = Self::default();
+        if let Some(state) = state {
+            state.apply_to(&mut config.ui.columns)?;
+        }
+        config.ui.columns.validate()?;
+        Ok(config)
+    }
+
     pub fn load_optional(path: impl AsRef<Path>) -> Result<Self> {
+        Self::load_optional_layered(path, None)
+    }
+
+    pub fn load_optional_layered(path: impl AsRef<Path>, state: Option<&UiState>) -> Result<Self> {
         let path = path.as_ref();
         match std::fs::symlink_metadata(path) {
-            Ok(_) => Self::load_required(path),
-            Err(error) if error.kind() == ErrorKind::NotFound => Ok(Self::default()),
+            Ok(_) => Self::load_required_layered(path, state),
+            Err(error) if error.kind() == ErrorKind::NotFound => Self::from_state(state),
             Err(error) => {
                 Err(error).with_context(|| format!("failed to inspect config {}", path.display()))
             }
@@ -560,10 +724,14 @@ impl AppConfig {
     }
 
     pub fn load_required(path: impl AsRef<Path>) -> Result<Self> {
+        Self::load_required_layered(path, None)
+    }
+
+    pub fn load_required_layered(path: impl AsRef<Path>, state: Option<&UiState>) -> Result<Self> {
         let path = path.as_ref();
         let input = std::fs::read_to_string(path)
             .with_context(|| format!("failed to read config {}", path.display()))?;
-        Self::from_toml(&input)
+        Self::from_toml_layered(&input, state)
     }
 
     /// Parse and validate all configured key chords once at startup.
@@ -613,6 +781,24 @@ fn default_key_toggle_exit() -> Vec<String> {
 }
 fn default_key_toggle_duration() -> Vec<String> {
     binding("alt-4")
+}
+fn default_key_column_next() -> Vec<String> {
+    binding("alt-c")
+}
+fn default_key_column_move_left() -> Vec<String> {
+    binding("alt-left")
+}
+fn default_key_column_move_right() -> Vec<String> {
+    binding("alt-right")
+}
+fn default_key_column_toggle() -> Vec<String> {
+    binding("alt-v")
+}
+fn default_key_sort_by_column() -> Vec<String> {
+    binding("alt-s")
+}
+fn default_key_sort_direction() -> Vec<String> {
+    binding("alt-r")
 }
 fn default_key_select_next() -> Vec<String> {
     bindings(&["up", "ctrl-k"])

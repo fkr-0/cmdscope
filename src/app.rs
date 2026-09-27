@@ -3,6 +3,7 @@ use crate::{
     SearchMode, SearchScope, SearchStats,
     config::{ColumnConfig, WindowConfig, WrapConfig},
     menu::{Menu, default_actions_menu},
+    ui_state::{SortDirection, SortField, UiState},
 };
 use std::collections::BTreeMap;
 
@@ -35,6 +36,12 @@ pub enum Msg {
     TogglePwd,
     ToggleExit,
     ToggleDuration,
+    ColumnNext,
+    ColumnMoveLeft,
+    ColumnMoveRight,
+    ColumnToggle,
+    SortByColumn,
+    SortDirection,
     OpenLocation,
     OpenTimeline,
     Accept,
@@ -44,6 +51,7 @@ pub enum Msg {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModalKey {
     Confirm,
+    Activate(usize),
     Next,
     Previous,
     Cancel,
@@ -72,6 +80,12 @@ impl From<KeyAction> for Msg {
             KeyAction::TogglePwd => Self::TogglePwd,
             KeyAction::ToggleExit => Self::ToggleExit,
             KeyAction::ToggleDuration => Self::ToggleDuration,
+            KeyAction::ColumnNext => Self::ColumnNext,
+            KeyAction::ColumnMoveLeft => Self::ColumnMoveLeft,
+            KeyAction::ColumnMoveRight => Self::ColumnMoveRight,
+            KeyAction::ColumnToggle => Self::ColumnToggle,
+            KeyAction::SortByColumn => Self::SortByColumn,
+            KeyAction::SortDirection => Self::SortDirection,
             KeyAction::SelectNext => Self::SelectNext,
             KeyAction::SelectPrevious => Self::SelectPrevious,
             KeyAction::Accept => Self::Accept,
@@ -103,6 +117,8 @@ pub struct AppModel {
     view_mode: ViewMode,
     metadata_visible: bool,
     columns: ColumnConfig,
+    focused_column: ColumnId,
+    ui_state_revision: u64,
     actions_menu: Option<Menu>,
     should_quit: bool,
     query_error: Option<String>,
@@ -128,6 +144,12 @@ impl AppModel {
     ) -> Self {
         let mut model = Self::new_with_environment(store, current_pwd, git_root, pwd_match_mode);
         model.columns = config.clone();
+        model.focused_column = config
+            .normalized_order()
+            .first()
+            .copied()
+            .unwrap_or(ColumnId::Date);
+        model.sort_visible();
         model
     }
 
@@ -166,6 +188,8 @@ impl AppModel {
             view_mode: ViewMode::Search,
             metadata_visible: true,
             columns: ColumnConfig::default(),
+            focused_column: ColumnId::Date,
+            ui_state_revision: 0,
             actions_menu: None,
             should_quit: false,
             query_error: None,
@@ -352,10 +376,24 @@ impl AppModel {
                     self.actions_menu = Some(default_actions_menu());
                 }
             }
-            Msg::ToggleDate => self.columns.date = !self.columns.date,
-            Msg::TogglePwd => self.columns.pwd = !self.columns.pwd,
-            Msg::ToggleExit => self.columns.exit = !self.columns.exit,
-            Msg::ToggleDuration => self.columns.duration = !self.columns.duration,
+            Msg::ToggleDate => self.toggle_column(ColumnId::Date),
+            Msg::TogglePwd => self.toggle_column(ColumnId::Pwd),
+            Msg::ToggleExit => self.toggle_column(ColumnId::Exit),
+            Msg::ToggleDuration => self.toggle_column(ColumnId::Duration),
+            Msg::ColumnNext => self.focus_next_column(),
+            Msg::ColumnMoveLeft => self.move_focused_column(false),
+            Msg::ColumnMoveRight => self.move_focused_column(true),
+            Msg::ColumnToggle => self.toggle_column(self.focused_column),
+            Msg::SortByColumn => {
+                self.columns.sort_by = SortField::from_column(self.focused_column);
+                self.bump_ui_state_revision();
+                self.resort_visible_preserving_selection();
+            }
+            Msg::SortDirection => {
+                self.columns.sort_direction = self.columns.sort_direction.toggle();
+                self.bump_ui_state_revision();
+                self.resort_visible_preserving_selection();
+            }
             Msg::OpenLocation => self.open_window("location"),
             Msg::OpenTimeline => self.open_window("timeline"),
             Msg::Accept => {
@@ -401,9 +439,102 @@ impl AppModel {
         }
         self.visible.clear();
         self.visible.extend_from_slice(self.search.results());
+        self.sort_visible();
         if self.selected_index >= self.visible.len() {
             self.selected_index = self.visible.len().saturating_sub(1);
         }
+    }
+
+    fn sort_visible(&mut self) {
+        if matches!(self.view_mode, ViewMode::Context { .. }) {
+            return;
+        }
+        let direction = self.columns.sort_direction;
+        if self.columns.sort_by == SortField::Relevance {
+            if direction == SortDirection::Ascending {
+                self.visible.reverse();
+            }
+            return;
+        }
+        let field = self.columns.sort_by;
+        let search = &self.search;
+        self.visible.sort_by(|left, right| {
+            let left_entry = search.entry(*left);
+            let right_entry = search.entry(*right);
+            let order = match field {
+                SortField::Relevance => std::cmp::Ordering::Equal,
+                SortField::Date => left_entry.timestamp.cmp(&right_entry.timestamp),
+                SortField::Pwd => left_entry.cwd.cmp(&right_entry.cwd),
+                SortField::Exit => left_entry.exit.cmp(&right_entry.exit),
+                SortField::Duration => left_entry.duration.cmp(&right_entry.duration),
+                SortField::Command => left_entry.command.cmp(&right_entry.command),
+            }
+            .then_with(|| left_entry.timestamp.cmp(&right_entry.timestamp))
+            .then_with(|| left_entry.id.cmp(&right_entry.id));
+            if direction == SortDirection::Ascending {
+                order
+            } else {
+                order.reverse()
+            }
+        });
+    }
+
+    fn resort_visible_preserving_selection(&mut self) {
+        let selected_id = self.selected_id().map(str::to_owned);
+        self.sort_visible();
+        if let Some(id) = selected_id
+            && let Some(index) = self
+                .visible
+                .iter()
+                .position(|&index| self.search.entry(index).id == id)
+        {
+            self.selected_index = index;
+        }
+    }
+
+    fn bump_ui_state_revision(&mut self) {
+        self.ui_state_revision = self.ui_state_revision.wrapping_add(1);
+    }
+
+    fn focus_next_column(&mut self) {
+        let order = self.columns.normalized_order();
+        let current = order
+            .iter()
+            .position(|&column| column == self.focused_column)
+            .unwrap_or(0);
+        self.focused_column = order[(current + 1) % order.len()];
+    }
+
+    fn move_focused_column(&mut self, right: bool) {
+        self.columns.order = self.columns.normalized_order();
+        let Some(index) = self
+            .columns
+            .order
+            .iter()
+            .position(|&column| column == self.focused_column)
+        else {
+            return;
+        };
+        let target = if right {
+            (index + 1).min(self.columns.order.len().saturating_sub(1))
+        } else {
+            index.saturating_sub(1)
+        };
+        if target != index {
+            self.columns.order.swap(index, target);
+            self.bump_ui_state_revision();
+        }
+    }
+
+    fn toggle_column(&mut self, column: ColumnId) {
+        let value = match column {
+            ColumnId::Date => &mut self.columns.date,
+            ColumnId::Pwd => &mut self.columns.pwd,
+            ColumnId::Exit => &mut self.columns.exit,
+            ColumnId::Duration => &mut self.columns.duration,
+        };
+        *value = !*value;
+        self.bump_ui_state_revision();
     }
 
     fn refresh_context(&mut self) {
@@ -482,6 +613,26 @@ impl AppModel {
         &self.columns
     }
 
+    pub fn focused_column(&self) -> ColumnId {
+        self.focused_column
+    }
+
+    pub fn sort_field(&self) -> SortField {
+        self.columns.sort_by
+    }
+
+    pub fn sort_direction(&self) -> SortDirection {
+        self.columns.sort_direction
+    }
+
+    pub fn ui_state_revision(&self) -> u64 {
+        self.ui_state_revision
+    }
+
+    pub fn ui_state(&self) -> UiState {
+        UiState::from_columns(&self.columns)
+    }
+
     pub fn selected_id(&self) -> Option<&str> {
         self.selected().map(|entry| entry.id.as_str())
     }
@@ -528,10 +679,19 @@ impl AppModel {
 
     pub fn open_named_menu(&mut self, name: &str) {
         if let Some(menu) = self.menus.get(name).cloned() {
+            let menu_name = menu.name.clone();
             let hooks = menu.on_open.clone();
             self.menu_stack.push(menu);
             self.actions_menu = None;
             self.run_lifecycle_actions(&hooks);
+            let item_hooks = self
+                .menu_stack
+                .last()
+                .filter(|menu| menu.name == menu_name)
+                .and_then(Menu::selected_item)
+                .map(|item| item.on_select.clone())
+                .unwrap_or_default();
+            self.run_lifecycle_actions(&item_hooks);
         }
     }
 
@@ -561,7 +721,12 @@ impl AppModel {
 
     pub fn close_modal(&mut self) {
         if let Some(menu) = self.menu_stack.pop() {
+            let item_hooks = menu
+                .selected_item()
+                .map(|item| item.on_leave.clone())
+                .unwrap_or_default();
             let hooks = menu.on_leave.clone();
+            self.run_lifecycle_actions(&item_hooks);
             self.run_lifecycle_actions(&hooks);
             return;
         }
@@ -572,7 +737,13 @@ impl AppModel {
             }
             return;
         }
-        self.actions_menu = None;
+        if let Some(menu) = self.actions_menu.take() {
+            let item_hooks = menu
+                .selected_item()
+                .map(|item| item.on_leave.clone())
+                .unwrap_or_default();
+            self.run_lifecycle_actions(&item_hooks);
+        }
     }
 
     fn run_lifecycle_actions(&mut self, actions: &[Action]) {
@@ -597,9 +768,43 @@ impl AppModel {
         let Some(item) = menu.selected_item() else {
             return;
         };
-        let on_select = item.on_select.clone();
+        let on_leave = item.on_leave.clone();
         let action = item.action.clone();
+        self.run_lifecycle_actions(&on_leave);
+        self.execute_action(action);
+    }
+
+    pub fn execute_menu_item(&mut self, index: usize) {
+        let Some(menu) = self.actions_menu_mut() else {
+            return;
+        };
+        if index >= menu.items.len() {
+            return;
+        }
+        let selection_changed = menu.selected != index;
+        let previous_leave = if selection_changed {
+            menu.selected_item()
+                .map(|item| item.on_leave.clone())
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+        menu.selected = index;
+        let item = &menu.items[index];
+        let on_select = if selection_changed {
+            item.on_select.clone()
+        } else {
+            Vec::new()
+        };
+        let on_leave = item.on_leave.clone();
+        let action = item.action.clone();
+        self.run_lifecycle_actions(&previous_leave);
         self.run_lifecycle_actions(&on_select);
+        self.run_lifecycle_actions(&on_leave);
+        self.execute_action(action);
+    }
+
+    fn execute_action(&mut self, action: Action) {
         match action {
             Action::InsertExit => {
                 self.accepted_command = self.selected().map(|entry| entry.command.clone());
@@ -706,13 +911,32 @@ impl AppModel {
     }
 
     pub fn handle_modal_next(&mut self) {
-        if let Some(menu) = &mut self.actions_menu {
-            menu.next();
-        }
+        self.move_modal_selection(true);
     }
+
     pub fn handle_modal_previous(&mut self) {
-        if let Some(menu) = &mut self.actions_menu {
-            menu.previous();
-        }
+        self.move_modal_selection(false);
+    }
+
+    fn move_modal_selection(&mut self, next: bool) {
+        let hooks = {
+            let Some(menu) = self.actions_menu_mut() else {
+                return;
+            };
+            let previous = menu.selected;
+            if next {
+                menu.next();
+            } else {
+                menu.previous();
+            }
+            if menu.selected == previous {
+                return;
+            }
+            let on_leave = menu.items[previous].on_leave.clone();
+            let on_select = menu.items[menu.selected].on_select.clone();
+            (on_leave, on_select)
+        };
+        self.run_lifecycle_actions(&hooks.0);
+        self.run_lifecycle_actions(&hooks.1);
     }
 }

@@ -54,6 +54,8 @@ fn sqlite_refresh_insert_update_delete_and_selection_disappearance() {
     assert!(deleted.entries().iter().all(|e| e.id != "b"));
     let mut model = AppModel::new(initial, Some("/repo".into()));
     assert_eq!(model.selected_id(), Some("b"));
+    model.replace_history(updated);
+    assert_eq!(model.selected_id(), Some("b"));
     model.replace_history(deleted);
-    assert_eq!(model.selected_id(), Some("c"));
+    assert_eq!(model.selected_id(), Some("a"));
 }

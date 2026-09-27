@@ -21,6 +21,7 @@ pub mod query;
 pub mod scope;
 pub mod search;
 pub mod tui;
+pub mod ui_state;
 
 pub use action::{Action, ActionContext};
 pub use app::{AppModel, ModalKey, Msg};
@@ -34,3 +35,4 @@ pub use live::LiveHistory;
 pub use query::{QueryPlan, QueryStage};
 pub use scope::{PwdMatchMode, SearchMode, SearchScope};
 pub use search::{SearchEngine, SearchStats};
+pub use ui_state::{SortDirection, SortField, UiState};

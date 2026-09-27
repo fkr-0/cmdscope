@@ -2,13 +2,50 @@ use crate::HistoryEntry;
 use crate::config::{ColumnConfig, DateFormat};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Deserialize, serde::Serialize,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum ColumnId {
     Date,
     Pwd,
     Exit,
     Duration,
+}
+
+impl ColumnId {
+    pub const ALL: [Self; 4] = [Self::Date, Self::Pwd, Self::Exit, Self::Duration];
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Date => "date",
+            Self::Pwd => "pwd",
+            Self::Exit => "exit",
+            Self::Duration => "duration",
+        }
+    }
+}
+
+impl std::fmt::Display for ColumnId {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+impl std::str::FromStr for ColumnId {
+    type Err = anyhow::Error;
+
+    fn from_str(input: &str) -> Result<Self, Self::Err> {
+        match input.trim().to_ascii_lowercase().as_str() {
+            "date" => Ok(Self::Date),
+            "pwd" | "cwd" => Ok(Self::Pwd),
+            "exit" | "status" => Ok(Self::Exit),
+            "duration" | "time" => Ok(Self::Duration),
+            other => {
+                anyhow::bail!("unknown column {other:?}; expected date, pwd, exit, or duration")
+            }
+        }
+    }
 }
 
 pub fn format_column(

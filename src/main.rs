@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use clap::Parser;
-use cmdscope::{AppConfig, HistoryStore};
+use cmdscope::{AppConfig, ColumnId, HistoryStore, SortDirection, SortField, UiState};
 use std::{
     env,
     io::{self, Write},
@@ -19,6 +19,18 @@ struct Args {
     #[arg(long, env = "CMDSCOPE_CONFIG")]
     config: Option<PathBuf>,
 
+    /// Override visible column order (comma-separated: date,pwd,exit,duration).
+    #[arg(long, env = "CMDSCOPE_COLUMNS", value_delimiter = ',')]
+    columns: Option<Vec<ColumnId>>,
+
+    /// Override result sorting (relevance,date,pwd,exit,duration,command).
+    #[arg(long, env = "CMDSCOPE_SORT")]
+    sort: Option<SortField>,
+
+    /// Override result sort direction (ascending/descending).
+    #[arg(long, env = "CMDSCOPE_SORT_DIRECTION")]
+    sort_direction: Option<SortDirection>,
+
     #[arg(long)]
     print_first: bool,
 
@@ -29,10 +41,22 @@ struct Args {
 
 fn main() -> Result<()> {
     let args = Args::parse();
-    let config = match args.config {
-        Some(path) => AppConfig::load_required(path)?,
-        None => AppConfig::load_optional(default_config_path())?,
+    let ui_state_path = default_ui_state_path();
+    let persisted_state = ui_state_path
+        .as_deref()
+        .map(UiState::load_optional)
+        .transpose()?
+        .flatten();
+    let mut config = match args.config {
+        Some(path) => AppConfig::load_required_layered(path, persisted_state.as_ref())?,
+        None => AppConfig::load_optional_layered(default_config_path(), persisted_state.as_ref())?,
     };
+    apply_runtime_overrides(
+        &mut config,
+        args.columns.as_deref(),
+        args.sort,
+        args.sort_direction,
+    )?;
     let keymap = config.compile_keymap()?;
     config.ui.validate_references()?;
     let menus = config.ui.compile_menus()?;
@@ -47,7 +71,7 @@ fn main() -> Result<()> {
 
     let cwd = runtime_cwd();
     let git_root = detect_git_root();
-    let selected = terminal::run_tui(store, cwd, git_root, config, keymap, menus)
+    let selected = terminal::run_tui(store, cwd, git_root, config, keymap, menus, ui_state_path)
         .context("terminal UI failed")?;
     if let Some(command) = selected {
         write_command(&command, args.nul)?;
@@ -103,6 +127,53 @@ fn atuin_default_db_path(xdg_data_home: Option<PathBuf>, home: Option<PathBuf>) 
         .map(|data_home| data_home.join("atuin/history.db"))
 }
 
+fn apply_runtime_overrides(
+    config: &mut AppConfig,
+    columns: Option<&[ColumnId]>,
+    sort: Option<SortField>,
+    sort_direction: Option<SortDirection>,
+) -> Result<()> {
+    if let Some(columns) = columns {
+        let mut unique = Vec::new();
+        for &column in columns {
+            if unique.contains(&column) {
+                anyhow::bail!(
+                    "column {column} appears more than once in --columns/CMDSCOPE_COLUMNS"
+                );
+            }
+            unique.push(column);
+        }
+        config.ui.columns.order = unique.clone();
+        config.ui.columns.date = unique.contains(&ColumnId::Date);
+        config.ui.columns.pwd = unique.contains(&ColumnId::Pwd);
+        config.ui.columns.exit = unique.contains(&ColumnId::Exit);
+        config.ui.columns.duration = unique.contains(&ColumnId::Duration);
+    }
+    if let Some(sort) = sort {
+        config.ui.columns.sort_by = sort;
+    }
+    if let Some(direction) = sort_direction {
+        config.ui.columns.sort_direction = direction;
+    }
+    config.ui.columns.validate()
+}
+
+fn default_ui_state_path() -> Option<PathBuf> {
+    cmdscope_ui_state_path(
+        env::var_os("XDG_DATA_HOME").map(PathBuf::from),
+        env::var_os("HOME").map(PathBuf::from),
+    )
+}
+
+fn cmdscope_ui_state_path(
+    xdg_data_home: Option<PathBuf>,
+    home: Option<PathBuf>,
+) -> Option<PathBuf> {
+    xdg_data_home
+        .or_else(|| home.map(|home| home.join(".local/share")))
+        .map(|data_home| data_home.join("cmdscope/ui-state.toml"))
+}
+
 fn default_config_path() -> PathBuf {
     env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
@@ -126,7 +197,10 @@ fn detect_git_root() -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{atuin_default_db_path, runtime_cwd_from};
+    use super::{
+        apply_runtime_overrides, atuin_default_db_path, cmdscope_ui_state_path, runtime_cwd_from,
+    };
+    use cmdscope::{AppConfig, ColumnId, SortDirection, SortField};
     use std::path::PathBuf;
 
     #[test]
@@ -163,5 +237,41 @@ mod tests {
             path,
             Some(PathBuf::from("/home/me/.local/share/atuin/history.db"))
         );
+    }
+
+    #[test]
+    fn cmdscope_ui_state_prefers_xdg_data_home() {
+        assert_eq!(
+            cmdscope_ui_state_path(
+                Some(PathBuf::from("/xdg/data")),
+                Some(PathBuf::from("/home/me")),
+            ),
+            Some(PathBuf::from("/xdg/data/cmdscope/ui-state.toml"))
+        );
+        assert_eq!(
+            cmdscope_ui_state_path(None, Some(PathBuf::from("/home/me"))),
+            Some(PathBuf::from(
+                "/home/me/.local/share/cmdscope/ui-state.toml"
+            ))
+        );
+    }
+
+    #[test]
+    fn runtime_overrides_replace_columns_and_sort_last() {
+        let mut config = AppConfig::default();
+        apply_runtime_overrides(
+            &mut config,
+            Some(&[ColumnId::Pwd, ColumnId::Date]),
+            Some(SortField::Pwd),
+            Some(SortDirection::Ascending),
+        )
+        .unwrap();
+
+        assert_eq!(
+            config.ui.columns.visible(),
+            vec![ColumnId::Pwd, ColumnId::Date]
+        );
+        assert_eq!(config.ui.columns.sort_by, SortField::Pwd);
+        assert_eq!(config.ui.columns.sort_direction, SortDirection::Ascending);
     }
 }
